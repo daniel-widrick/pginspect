@@ -1,0 +1,272 @@
+// Package db manages live Postgres connections and runs queries against them.
+package db
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net"
+	"net/url"
+	"strconv"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"pginspect/internal/config"
+)
+
+// Column describes one column of a result set.
+type Column struct {
+	Name    string `json:"name"`
+	TypeOID uint32 `json:"typeOid"`
+	Type    string `json:"type"`
+}
+
+// Result is the outcome of one statement. Rows hold the server's text
+// representation of each value; nil means SQL NULL.
+type Result struct {
+	Columns      []Column    `json:"columns"`
+	Rows         [][]*string `json:"rows"`
+	RowCount     int         `json:"rowCount"`
+	Truncated    bool        `json:"truncated"`
+	Command      string      `json:"command"`
+	RowsAffected int64       `json:"rowsAffected"`
+}
+
+// QueryResponse is what RunQuery hands back. Results that completed before an
+// error are kept, so a failing multi-statement script still shows what ran.
+type QueryResponse struct {
+	Results    []Result `json:"results"`
+	Error      string   `json:"error"`
+	DurationMs int64    `json:"durationMs"`
+	Cancelled  bool     `json:"cancelled"`
+}
+
+// Info describes an open connection.
+type Info struct {
+	ID            string `json:"id"`
+	ServerVersion string `json:"serverVersion"`
+	Database      string `json:"database"`
+	User          string `json:"user"`
+}
+
+// Session is one open connection profile. A small pool lets several editor
+// tabs run queries concurrently; each RunQuery acquires a connection for the
+// duration of the statement batch.
+type Session struct {
+	Profile config.Profile
+	pool    *pgxpool.Pool
+
+	mu        sync.Mutex
+	running   map[string]context.CancelFunc
+	typeNames map[uint32]string
+}
+
+// DSN builds a connection string for the profile.
+func DSN(p config.Profile, password string) string {
+	u := url.URL{
+		Scheme: "postgres",
+		Host:   net.JoinHostPort(p.Host, strconv.Itoa(p.Port)),
+		Path:   "/" + p.Database,
+	}
+	if password != "" {
+		u.User = url.UserPassword(p.User, password)
+	} else {
+		u.User = url.User(p.User)
+	}
+	q := url.Values{}
+	if p.SSLMode != "" {
+		q.Set("sslmode", p.SSLMode)
+	}
+	q.Set("application_name", "pginspect")
+	u.RawQuery = q.Encode()
+	return u.String()
+}
+
+// Open connects using the profile and returns a ready session.
+func Open(ctx context.Context, p config.Profile, password string) (*Session, error) {
+	cfg, err := pgxpool.ParseConfig(DSN(p, password))
+	if err != nil {
+		return nil, err
+	}
+	cfg.MaxConns = 4
+	cfg.MinConns = 0
+	cfg.MaxConnIdleTime = 5 * time.Minute
+	cfg.ConnConfig.ConnectTimeout = 10 * time.Second
+	pool, err := pgxpool.NewWithConfig(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return &Session{
+		Profile:   p,
+		pool:      pool,
+		running:   map[string]context.CancelFunc{},
+		typeNames: map[uint32]string{},
+	}, nil
+}
+
+// Close shuts the pool down, cancelling any running queries.
+func (s *Session) Close() {
+	s.mu.Lock()
+	for _, cancel := range s.running {
+		cancel()
+	}
+	s.running = map[string]context.CancelFunc{}
+	s.mu.Unlock()
+	s.pool.Close()
+}
+
+// Info queries the server for version and identity.
+func (s *Session) Info(ctx context.Context) (Info, error) {
+	var info Info
+	info.ID = s.Profile.ID
+	err := s.pool.QueryRow(ctx,
+		`select current_setting('server_version'), current_database(), current_user`).
+		Scan(&info.ServerVersion, &info.Database, &info.User)
+	return info, err
+}
+
+// Cancel aborts the query with the given ID, if it is still running.
+func (s *Session) Cancel(queryID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cancel, ok := s.running[queryID]
+	if ok {
+		cancel()
+	}
+	return ok
+}
+
+// RunQuery executes a script using the simple query protocol, so it may hold
+// several statements. Values come back as the server's text form. At most
+// maxRows rows per result are kept; the rest are drained and counted.
+func (s *Session) RunQuery(ctx context.Context, queryID, sql string, maxRows int) QueryResponse {
+	if maxRows <= 0 {
+		maxRows = 1000
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	s.mu.Lock()
+	s.running[queryID] = cancel
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.running, queryID)
+		s.mu.Unlock()
+		cancel()
+	}()
+
+	start := time.Now()
+	resp := QueryResponse{Results: []Result{}}
+	finish := func(err error) QueryResponse {
+		resp.DurationMs = time.Since(start).Milliseconds()
+		if err != nil {
+			resp.Error = describeError(err)
+			resp.Cancelled = errors.Is(ctx.Err(), context.Canceled) || isCancelledPgError(err)
+		}
+		return resp
+	}
+
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return finish(err)
+	}
+	defer conn.Release()
+
+	mrr := conn.Conn().PgConn().Exec(ctx, sql)
+	for mrr.NextResult() {
+		rr := mrr.ResultReader()
+		res := Result{Rows: [][]*string{}}
+		for _, fd := range rr.FieldDescriptions() {
+			res.Columns = append(res.Columns, Column{
+				Name:    fd.Name,
+				TypeOID: fd.DataTypeOID,
+				Type:    s.typeName(conn.Conn(), fd.DataTypeOID),
+			})
+		}
+		for rr.NextRow() {
+			res.RowCount++
+			if res.RowCount > maxRows {
+				res.Truncated = true
+				continue
+			}
+			vals := rr.Values()
+			row := make([]*string, len(vals))
+			for i, v := range vals {
+				if v != nil {
+					str := string(v)
+					row[i] = &str
+				}
+			}
+			res.Rows = append(res.Rows, row)
+		}
+		tag, err := rr.Close()
+		if err != nil {
+			resp.Results = append(resp.Results, res)
+			_ = mrr.Close()
+			return finish(err)
+		}
+		res.Command = tag.String()
+		res.RowsAffected = tag.RowsAffected()
+		resp.Results = append(resp.Results, res)
+	}
+	return finish(mrr.Close())
+}
+
+// typeName resolves an OID to a type name, using pgx's registry first and
+// falling back to pg_type for user-defined types.
+func (s *Session) typeName(conn *pgx.Conn, oid uint32) string {
+	if t, ok := conn.TypeMap().TypeForOID(oid); ok {
+		return t.Name
+	}
+	s.mu.Lock()
+	name, ok := s.typeNames[oid]
+	s.mu.Unlock()
+	if ok {
+		return name
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	// Use a separate pool connection: the calling connection is mid-result.
+	err := s.pool.QueryRow(ctx, `select typname from pg_catalog.pg_type where oid = $1`, oid).Scan(&name)
+	if err != nil {
+		name = fmt.Sprintf("oid:%d", oid)
+	}
+	s.mu.Lock()
+	s.typeNames[oid] = name
+	s.mu.Unlock()
+	return name
+}
+
+func isCancelledPgError(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "57014"
+}
+
+// describeError formats Postgres errors with position and detail information.
+func describeError(err error) string {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) {
+		return err.Error()
+	}
+	msg := fmt.Sprintf("%s: %s", pgErr.Severity, pgErr.Message)
+	if pgErr.Detail != "" {
+		msg += "\nDETAIL: " + pgErr.Detail
+	}
+	if pgErr.Hint != "" {
+		msg += "\nHINT: " + pgErr.Hint
+	}
+	if pgErr.Position > 0 {
+		msg += fmt.Sprintf("\nPOSITION: %d", pgErr.Position)
+	}
+	if pgErr.Where != "" {
+		msg += "\nWHERE: " + pgErr.Where
+	}
+	return msg + fmt.Sprintf("\nSQLSTATE %s", pgErr.Code)
+}

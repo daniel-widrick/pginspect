@@ -1,0 +1,181 @@
+<script lang="ts">
+  import { onMount } from 'svelte'
+  import { EventsOn } from '../wailsjs/runtime/runtime'
+  import { store, activeTab, profileName } from './lib/state.svelte'
+  import { loadProfiles, blankProfile } from './lib/connections.svelte'
+  import { newQueryTab, closeTab, runActive, runQuery, cancelActive, isQueryTab } from './lib/tabs.svelte'
+  import Sidebar from './components/Sidebar.svelte'
+  import Editor from './components/Editor.svelte'
+  import ResultsGrid from './components/ResultsGrid.svelte'
+  import StructureView from './components/StructureView.svelte'
+  import ProfileDialog from './components/ProfileDialog.svelte'
+  import PasswordDialog from './components/PasswordDialog.svelte'
+  import Splitter from './components/Splitter.svelte'
+
+  let editor = $state<Editor>()
+  let grid = $state<ResultsGrid>()
+  let mainEl = $state<HTMLElement>()
+
+  const tab = $derived(activeTab())
+  const queryTab = $derived(isQueryTab(tab) ? tab : null)
+  const info = $derived(tab ? store.connected[tab.connId] : undefined)
+
+  $effect(() => {
+    store.editorApi = editor ? { getRunnableSql: () => editor!.getRunnableSql() } : null
+  })
+
+  function newTab() {
+    const connId = tab?.connId ?? Object.keys(store.connected)[0]
+    if (!connId) { store.dialog = { kind: 'profile', profile: blankProfile() }; return }
+    newQueryTab(connId)
+  }
+
+  function onKeydown(e: KeyboardEvent) {
+    const mod = e.metaKey || e.ctrlKey
+    if (mod && e.key === 't') { e.preventDefault(); newTab() }
+    else if (mod && e.key === 'w') { e.preventDefault(); if (tab) closeTab(tab.id) }
+    else if (mod && e.key === 'Enter') { e.preventDefault(); void runActive() }
+    else if (mod && e.shiftKey && e.key === 'Escape') { cancelActive() }
+  }
+
+  onMount(() => {
+    void loadProfiles()
+    const offs = [
+      EventsOn('menu:newtab', newTab),
+      EventsOn('menu:closetab', () => tab && closeTab(tab.id)),
+      EventsOn('menu:newconnection', () => (store.dialog = { kind: 'profile', profile: blankProfile() })),
+      EventsOn('menu:run', () => void runActive()),
+      EventsOn('menu:cancel', cancelActive),
+      EventsOn('menu:export', () => grid?.exportCsv()),
+    ]
+    return () => offs.forEach(off => off())
+  })
+
+  function fmtDuration(ms: number) {
+    return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(2)} s`
+  }
+</script>
+
+<svelte:window onkeydown={onKeydown} />
+
+<div class="app">
+  <div class="side" style="width: {store.sidebarWidth}px">
+    <Sidebar />
+  </div>
+  <Splitter direction="horizontal" onDrag={(d) => (store.sidebarWidth = Math.max(180, Math.min(600, store.sidebarWidth + d)))} />
+
+  <main bind:this={mainEl}>
+    <div class="tabbar">
+      {#each store.tabs as t (t.id)}
+        <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions, a11y_no_static_element_interactions -->
+        <div class="tab" class:active={t.id === store.activeTabId} onclick={() => (store.activeTabId = t.id)} role="tab" tabindex="-1"
+             onauxclick={(e) => { if (e.button === 1) closeTab(t.id) }}>
+          <span class="tab-conn" style="background: {store.profiles.find(p => p.id === t.connId)?.color || 'var(--fg-3)'}" title={profileName(t.connId)}></span>
+          <span class="tab-title">{t.kind === 'structure' ? '≡ ' : ''}{t.title}</span>
+          {#if t.kind === 'query' && t.running}<span class="tab-running"></span>{/if}
+          <button class="tab-close" onclick={(e) => { e.stopPropagation(); closeTab(t.id) }} title="Close">×</button>
+        </div>
+      {/each}
+      <button class="ghost small newtab" onclick={newTab} title="New query tab (Cmd/Ctrl+T)">+</button>
+    </div>
+
+    {#if queryTab}
+      {#key queryTab.id}
+        <div class="editor-pane" style="height: {store.editorHeight}px">
+          <Editor bind:this={editor} bind:value={queryTab.sql} schema={store.schemas[queryTab.connId] ?? {}}
+                  onRun={(sql) => runQuery(queryTab, sql)} />
+        </div>
+      {/key}
+      <div class="toolbar">
+        <button class="primary small" onclick={() => runActive()} disabled={queryTab.running || !info}>▶ Run</button>
+        <button class="small" onclick={cancelActive} disabled={!queryTab.running}>Cancel</button>
+        <span class="sep"></span>
+        <label class="limit">Limit
+          <select bind:value={store.maxRows}>
+            {#each [100, 500, 1000, 5000, 20000] as n}<option value={n}>{n}</option>{/each}
+          </select>
+        </label>
+        <span class="sep"></span>
+        <button class="small" onclick={() => grid?.exportCsv()} disabled={!queryTab.response?.results.length}>Export CSV</button>
+        <span class="grow"></span>
+        <span class="hint muted"><kbd>⌘/Ctrl</kbd>+<kbd>Enter</kbd> runs selection or all</span>
+      </div>
+      <Splitter direction="vertical" onDrag={(d) => (store.editorHeight = Math.max(80, Math.min((mainEl?.clientHeight ?? 800) - 160, store.editorHeight + d)))} />
+      <div class="results-pane">
+        <ResultsGrid bind:this={grid} tab={queryTab} />
+      </div>
+    {:else if tab?.kind === 'structure'}
+      <div class="results-pane"><StructureView {tab} /></div>
+    {:else}
+      <div class="welcome">
+        <h1>pginspect</h1>
+        <p class="muted">Connect to a database on the left, or add one to get started.</p>
+        <p class="muted small">
+          <kbd>⌘/Ctrl</kbd>+<kbd>T</kbd> new query tab &nbsp;
+          <kbd>⌘/Ctrl</kbd>+<kbd>Enter</kbd> run &nbsp;
+          double-click a table to see its data
+        </p>
+      </div>
+    {/if}
+
+    <footer class="status">
+      {#if tab && info}
+        <span class="dot" style="background: {store.profiles.find(p => p.id === tab.connId)?.color || 'var(--ok)'}"></span>
+        <span>{profileName(tab.connId)}</span>
+        <span class="muted">{info.user}@{info.database}</span>
+        <span class="muted">PostgreSQL {info.serverVersion}</span>
+      {:else if tab}
+        <span class="muted">{profileName(tab.connId)} (disconnected)</span>
+      {/if}
+      <span class="grow"></span>
+      {#if queryTab?.response}
+        {@const r = queryTab.response.results[queryTab.activeResult]}
+        {#if r?.columns?.length}
+          <span>{r.rows.length.toLocaleString()}{r.truncated ? ` of ${r.rowCount.toLocaleString()}` : ''} rows{r.truncated ? ' (truncated)' : ''}</span>
+        {/if}
+        <span class="muted">{fmtDuration(queryTab.response.durationMs)}</span>
+      {/if}
+    </footer>
+  </main>
+
+  {#if store.dialog?.kind === 'profile' && store.dialog.profile}
+    <ProfileDialog profile={store.dialog.profile} />
+  {:else if store.dialog?.kind === 'password'}
+    <PasswordDialog profileId={store.dialog.profileId} />
+  {/if}
+
+  {#if store.toast}
+    <div class="toast">{store.toast}</div>
+  {/if}
+</div>
+
+<style>
+  .app { display: flex; height: 100vh; width: 100vw; overflow: hidden; }
+  .side { flex-shrink: 0; height: 100%; min-width: 180px; }
+  main { flex: 1; display: flex; flex-direction: column; min-width: 0; height: 100%; }
+  .tabbar { display: flex; align-items: flex-end; background: var(--bg-2); border-bottom: 1px solid var(--border); padding: 4px 6px 0; gap: 2px; overflow-x: auto; flex-shrink: 0; height: 34px; }
+  .tab { display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 10px; border-radius: 6px 6px 0 0; color: var(--fg-2); max-width: 220px; cursor: default; user-select: none; flex-shrink: 0; }
+  .tab:hover { background: var(--bg-hover); }
+  .tab.active { background: var(--bg); color: var(--fg); box-shadow: inset 0 2px 0 var(--accent); }
+  .tab-conn { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+  .tab-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+  .tab-close { border: none; background: transparent; padding: 0 4px; color: var(--fg-3); font-size: 14px; line-height: 1; border-radius: 3px; }
+  .tab-close:hover { background: var(--bg-3); color: var(--fg); }
+  .tab-running { width: 8px; height: 8px; border: 2px solid var(--fg-3); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .newtab { margin-bottom: 3px; }
+  .editor-pane { flex-shrink: 0; min-height: 80px; border-bottom: 1px solid var(--border); }
+  .toolbar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: var(--bg-2); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
+  .limit { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-2); }
+  .limit select { width: auto; padding: 2px 6px; font-size: 12px; }
+  .grow { flex: 1; }
+  .hint { font-size: 11px; }
+  .results-pane { flex: 1; min-height: 0; overflow: hidden; }
+  .welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+  .welcome h1 { font-weight: 600; font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .welcome .small { font-size: 12px; }
+  .status { display: flex; align-items: center; gap: 12px; padding: 3px 10px; border-top: 1px solid var(--border); background: var(--bg-2); font-size: 11.5px; flex-shrink: 0; height: 24px; }
+  .status .dot { width: 7px; height: 7px; border-radius: 50%; }
+  .toast { position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 12.5px; box-shadow: 0 6px 24px rgba(0,0,0,0.3); z-index: 100; max-width: 70vw; white-space: pre-wrap; }
+</style>
