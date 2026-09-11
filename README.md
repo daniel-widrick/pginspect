@@ -14,6 +14,12 @@ Features so far:
   selected. Scripts with several statements run in one go.
 - Results grid: one tab per statement, sortable columns, NULL rendering,
   row limit, cancel, copy cell/row, CSV export.
+- Explain plan viewer: Cmd/Ctrl+E shows the estimated plan, Cmd/Ctrl+Shift+E
+  runs EXPLAIN ANALYZE with buffers. The tree shows per-node self time or
+  cost, actual versus estimated rows, and flags misestimates, filters that
+  discard most rows, sorts that spill to disk, and hash joins that batch.
+  ANALYZE runs inside a transaction that is always rolled back, so it is safe
+  on UPDATE and DELETE.
 - Light and dark themes following the system setting.
 
 ## Layout
@@ -45,12 +51,17 @@ wails build             # production binary in build/bin
 go test ./...           # db tests need the container below, otherwise they skip
 ```
 
-A throwaway database for local testing:
+A throwaway database for local testing, with sample data whose plans are
+worth looking at (300k orders, 750k order lines, 1M events, skewed keys,
+some deliberately missing indexes):
 
 ```sh
 docker run -d --name pginspect-pg -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=inspect -p 5433:5432 postgres:17
+docker exec -i pginspect-pg psql -q -U postgres -d inspect < testdata/seed.sql
 ```
+
+`testdata/explain-examples.sql` has queries to try with the plan viewer.
 
 ### Password storage
 
@@ -68,6 +79,6 @@ a mode 0600 `secrets.json` next to the profiles instead. Profiles live in:
 ## Roadmap
 
 - Inline data editing with SQL preview
-- Statement-at-cursor execution and explain plans
+- Statement-at-cursor execution
 - Virtualised grid for very large result sets
 - Per-tab transactions (currently each run is auto-commit on a pooled connection)

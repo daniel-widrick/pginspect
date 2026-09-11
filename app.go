@@ -250,6 +250,16 @@ func (a *App) RunQuery(connID, queryID, sql string, maxRows int) (db.QueryRespon
 	return s.RunQuery(a.ctx, queryID, sql, maxRows), nil
 }
 
+// Explain returns the plan for a statement as EXPLAIN JSON. With analyze the
+// statement executes inside a transaction that is rolled back afterwards.
+func (a *App) Explain(connID, queryID, sql string, analyze bool) (db.ExplainResponse, error) {
+	s, err := a.conns.Get(connID)
+	if err != nil {
+		return db.ExplainResponse{}, err
+	}
+	return s.Explain(a.ctx, queryID, sql, analyze), nil
+}
+
 // CancelQuery asks the server to abort a running query.
 func (a *App) CancelQuery(connID, queryID string) bool {
 	s, err := a.conns.Get(connID)

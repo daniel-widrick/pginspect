@@ -9,6 +9,9 @@ export interface QueryTab {
   connId: string
   sql: string
   response: db.QueryResponse | null
+  plan: db.ExplainResponse | null
+  /** Which pane the results area shows. */
+  view: 'results' | 'plan'
   running: boolean
   queryId: string
   activeResult: number

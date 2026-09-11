@@ -192,3 +192,38 @@ func TestIntrospection(t *testing.T) {
 		t.Errorf("view ddl: %q err=%v", view.DDL, err)
 	}
 }
+
+func TestExplain(t *testing.T) {
+	s := testSession(t)
+	ctx := context.Background()
+
+	plain := s.Explain(ctx, "e1", "select * from app.orders where customer_id = 1;", false)
+	if plain.Error != "" || !strings.Contains(plain.Plan, `"Node Type"`) || strings.Contains(plain.Plan, "Actual Rows") {
+		t.Errorf("plain explain: err=%q plan=%.120s", plain.Error, plain.Plan)
+	}
+
+	analyzed := s.Explain(ctx, "e2", "update app.orders set status = 'paid' where id = 1", true)
+	if analyzed.Error != "" || !strings.Contains(analyzed.Plan, "Actual Rows") || !strings.Contains(analyzed.Plan, "Execution Time") {
+		t.Errorf("analyze explain: err=%q plan=%.120s", analyzed.Error, analyzed.Plan)
+	}
+	// The update must have been rolled back: the marker value must not persist.
+	marker := s.Explain(ctx, "e4", "update app.orders set total = 12345.67 where id = 1", true)
+	if marker.Error != "" {
+		t.Fatal(marker.Error)
+	}
+	after := s.RunQuery(ctx, "e5", "select total from app.orders where id = 1", 1)
+	if after.Error != "" || *after.Results[0].Rows[0][0] == "12345.67" {
+		t.Errorf("explain analyze on an update was not rolled back (err=%q)", after.Error)
+	}
+
+	bad := s.Explain(ctx, "e6", "select * from nope", true)
+	if !strings.Contains(bad.Error, "42P01") {
+		t.Errorf("bad explain error: %q", bad.Error)
+	}
+	// Session must be clean afterwards (no aborted transaction on the pooled conn).
+	for i := 0; i < 5; i++ {
+		if r := s.RunQuery(ctx, "e7", "select 1", 1); r.Error != "" {
+			t.Fatalf("session unusable after failed explain analyze: %s", r.Error)
+		}
+	}
+}

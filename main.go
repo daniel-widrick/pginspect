@@ -35,7 +35,10 @@ func main() {
 	query.AddText("Run", keys.CmdOrCtrl("return"), emit("run"))
 	query.AddText("Cancel", keys.Combo("escape", keys.CmdOrCtrlKey, keys.ShiftKey), emit("cancel"))
 	query.AddSeparator()
-	query.AddText("Export Results as CSV...", keys.Combo("e", keys.CmdOrCtrlKey, keys.ShiftKey), emit("export"))
+	query.AddText("Explain", keys.CmdOrCtrl("e"), emit("explain"))
+	query.AddText("Explain Analyze", keys.Combo("e", keys.CmdOrCtrlKey, keys.ShiftKey), emit("explainanalyze"))
+	query.AddSeparator()
+	query.AddText("Export Results as CSV...", keys.Combo("s", keys.CmdOrCtrlKey, keys.ShiftKey), emit("export"))
 	appMenu.Append(menu.WindowMenu())
 
 	err := wails.Run(&options.App{

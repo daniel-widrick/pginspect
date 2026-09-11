@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -178,8 +179,12 @@ func (s *Session) RunQuery(ctx context.Context, queryID, sql string, maxRows int
 		return finish(err)
 	}
 	defer conn.Release()
+	return finish(s.runScript(ctx, conn.Conn(), sql, maxRows, &resp))
+}
 
-	mrr := conn.Conn().PgConn().Exec(ctx, sql)
+// runScript executes a script on conn, appending completed statements to resp.
+func (s *Session) runScript(ctx context.Context, conn *pgx.Conn, sql string, maxRows int, resp *QueryResponse) error {
+	mrr := conn.PgConn().Exec(ctx, sql)
 	for mrr.NextResult() {
 		rr := mrr.ResultReader()
 		res := Result{Rows: [][]*string{}}
@@ -187,7 +192,7 @@ func (s *Session) RunQuery(ctx context.Context, queryID, sql string, maxRows int
 			res.Columns = append(res.Columns, Column{
 				Name:    fd.Name,
 				TypeOID: fd.DataTypeOID,
-				Type:    s.typeName(conn.Conn(), fd.DataTypeOID),
+				Type:    s.typeName(conn, fd.DataTypeOID),
 			})
 		}
 		for rr.NextRow() {
@@ -210,13 +215,97 @@ func (s *Session) RunQuery(ctx context.Context, queryID, sql string, maxRows int
 		if err != nil {
 			resp.Results = append(resp.Results, res)
 			_ = mrr.Close()
-			return finish(err)
+			return err
 		}
 		res.Command = tag.String()
 		res.RowsAffected = tag.RowsAffected()
 		resp.Results = append(resp.Results, res)
 	}
-	return finish(mrr.Close())
+	return mrr.Close()
+}
+
+// ExplainResponse carries a plan in EXPLAIN's JSON format.
+type ExplainResponse struct {
+	Plan       string `json:"plan"`
+	Analyze    bool   `json:"analyze"`
+	Error      string `json:"error"`
+	DurationMs int64  `json:"durationMs"`
+	Cancelled  bool   `json:"cancelled"`
+}
+
+// Explain runs EXPLAIN (FORMAT JSON) on a single statement. With analyze the
+// statement really executes, inside a transaction that is always rolled back,
+// so explaining an UPDATE or DELETE leaves no trace.
+func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze bool) ExplainResponse {
+	stmt := strings.TrimSpace(sql)
+	stmt = strings.TrimRight(stmt, "; \t\r\n")
+	if stmt == "" {
+		return ExplainResponse{Error: "nothing to explain"}
+	}
+	opts := "FORMAT JSON, COSTS, SETTINGS"
+	if analyze {
+		opts = "ANALYZE, BUFFERS, TIMING, " + opts
+	}
+	script := "EXPLAIN (" + opts + ")\n" + stmt
+	if analyze {
+		script = "BEGIN;\n" + script + ";\nROLLBACK;"
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	s.mu.Lock()
+	s.running[queryID] = cancel
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.running, queryID)
+		s.mu.Unlock()
+		cancel()
+	}()
+
+	start := time.Now()
+	out := ExplainResponse{Analyze: analyze}
+	finish := func(err error) ExplainResponse {
+		out.DurationMs = time.Since(start).Milliseconds()
+		if err != nil {
+			out.Error = describeError(err)
+			out.Cancelled = errors.Is(ctx.Err(), context.Canceled) || isCancelledPgError(err)
+		}
+		return out
+	}
+
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return finish(err)
+	}
+	defer conn.Release()
+
+	resp := QueryResponse{}
+	err = s.runScript(ctx, conn.Conn(), script, 10000, &resp)
+	if analyze && conn.Conn().PgConn().TxStatus() != 'I' {
+		// The script stopped before its ROLLBACK; do not hand an aborted
+		// transaction back to the pool.
+		rbCtx, rbCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		_, _ = conn.Conn().PgConn().Exec(rbCtx, "ROLLBACK").ReadAll()
+		rbCancel()
+	}
+	if err != nil {
+		return finish(err)
+	}
+	for _, r := range resp.Results {
+		if len(r.Columns) == 1 && r.Columns[0].Name == "QUERY PLAN" {
+			var b strings.Builder
+			for _, row := range r.Rows {
+				if row[0] != nil {
+					b.WriteString(*row[0])
+				}
+			}
+			out.Plan = b.String()
+		}
+	}
+	if out.Plan == "" {
+		return finish(errors.New("server returned no plan"))
+	}
+	return finish(nil)
 }
 
 // typeName resolves an OID to a type name, using pgx's registry first and

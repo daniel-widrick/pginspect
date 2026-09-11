@@ -1,5 +1,5 @@
 // Tab lifecycle and query execution.
-import { RunQuery, CancelQuery, RelationInfo } from '../../wailsjs/go/main/App'
+import { RunQuery, CancelQuery, RelationInfo, Explain } from '../../wailsjs/go/main/App'
 import { store, activeTab, errorMessage, toast, type QueryTab, type StructureTab, type Tab } from './state.svelte'
 
 let counter = 0
@@ -13,6 +13,8 @@ export function newQueryTab(connId: string, sql = '', title = ''): QueryTab {
     connId,
     sql,
     response: null,
+    plan: null,
+    view: 'results',
     running: false,
     queryId: '',
     activeResult: 0,
@@ -88,6 +90,7 @@ export async function runQuery(tab: QueryTab, sql: string): Promise<void> {
   }
   tab.running = true
   tab.queryId = nextId()
+  tab.view = 'results'
   try {
     const resp = await RunQuery(tab.connId, tab.queryId, sql, store.maxRows)
     resp.results ??= []
@@ -99,6 +102,33 @@ export async function runQuery(tab: QueryTab, sql: string): Promise<void> {
     }
   } catch (e) {
     tab.response = { results: [], error: errorMessage(e), durationMs: 0, cancelled: false } as any
+  } finally {
+    tab.running = false
+  }
+}
+
+/** Explains the editor's selection (or whole document) in the active query tab. */
+export async function explainActive(analyze: boolean): Promise<void> {
+  const tab = activeTab()
+  if (!tab || tab.kind !== 'query') return
+  const sql = store.editorApi?.getRunnableSql() ?? tab.sql
+  await explainQuery(tab, sql, analyze)
+}
+
+export async function explainQuery(tab: QueryTab, sql: string, analyze: boolean): Promise<void> {
+  if (tab.running) return
+  if (!sql.trim()) return
+  if (!store.connected[tab.connId]) {
+    toast('Not connected')
+    return
+  }
+  tab.running = true
+  tab.queryId = nextId()
+  tab.view = 'plan'
+  try {
+    tab.plan = await Explain(tab.connId, tab.queryId, sql, analyze)
+  } catch (e) {
+    tab.plan = { plan: '', analyze, error: errorMessage(e), durationMs: 0, cancelled: false } as any
   } finally {
     tab.running = false
   }

@@ -3,10 +3,11 @@
   import { EventsOn } from '../wailsjs/runtime/runtime'
   import { store, activeTab, profileName } from './lib/state.svelte'
   import { loadProfiles, blankProfile } from './lib/connections.svelte'
-  import { newQueryTab, closeTab, runActive, runQuery, cancelActive, isQueryTab } from './lib/tabs.svelte'
+  import { newQueryTab, closeTab, runActive, runQuery, cancelActive, isQueryTab, explainActive } from './lib/tabs.svelte'
   import Sidebar from './components/Sidebar.svelte'
   import Editor from './components/Editor.svelte'
   import ResultsGrid from './components/ResultsGrid.svelte'
+  import PlanView from './components/PlanView.svelte'
   import StructureView from './components/StructureView.svelte'
   import ProfileDialog from './components/ProfileDialog.svelte'
   import PasswordDialog from './components/PasswordDialog.svelte'
@@ -35,6 +36,7 @@
     if (mod && e.key === 't') { e.preventDefault(); newTab() }
     else if (mod && e.key === 'w') { e.preventDefault(); if (tab) closeTab(tab.id) }
     else if (mod && e.key === 'Enter') { e.preventDefault(); void runActive() }
+    else if (mod && (e.key === 'e' || e.key === 'E')) { e.preventDefault(); void explainActive(e.shiftKey) }
     else if (mod && e.shiftKey && e.key === 'Escape') { cancelActive() }
   }
 
@@ -46,6 +48,8 @@
       EventsOn('menu:newconnection', () => (store.dialog = { kind: 'profile', profile: blankProfile() })),
       EventsOn('menu:run', () => void runActive()),
       EventsOn('menu:cancel', cancelActive),
+      EventsOn('menu:explain', () => void explainActive(false)),
+      EventsOn('menu:explainanalyze', () => void explainActive(true)),
       EventsOn('menu:export', () => grid?.exportCsv()),
     ]
     return () => offs.forEach(off => off())
@@ -90,6 +94,9 @@
         <button class="primary small" onclick={() => runActive()} disabled={queryTab.running || !info}>▶ Run</button>
         <button class="small" onclick={cancelActive} disabled={!queryTab.running}>Cancel</button>
         <span class="sep"></span>
+        <button class="small" onclick={() => explainActive(false)} disabled={queryTab.running || !info} title="Estimated plan (Cmd/Ctrl+E)">Explain</button>
+        <button class="small" onclick={() => explainActive(true)} disabled={queryTab.running || !info} title="Run and show the actual plan; writes are rolled back (Cmd/Ctrl+Shift+E)">Explain Analyze</button>
+        <span class="sep"></span>
         <label class="limit">Limit
           <select bind:value={store.maxRows}>
             {#each [100, 500, 1000, 5000, 20000] as n}<option value={n}>{n}</option>{/each}
@@ -98,11 +105,21 @@
         <span class="sep"></span>
         <button class="small" onclick={() => grid?.exportCsv()} disabled={!queryTab.response?.results.length}>Export CSV</button>
         <span class="grow"></span>
+        {#if queryTab.response && queryTab.plan}
+          <span class="segmented">
+            <button class="small" class:active={queryTab.view === 'results'} onclick={() => (queryTab.view = 'results')}>Results</button>
+            <button class="small" class:active={queryTab.view === 'plan'} onclick={() => (queryTab.view = 'plan')}>Plan</button>
+          </span>
+        {/if}
         <span class="hint muted"><kbd>⌘/Ctrl</kbd>+<kbd>Enter</kbd> runs selection or all</span>
       </div>
       <Splitter direction="vertical" onDrag={(d) => (store.editorHeight = Math.max(80, Math.min((mainEl?.clientHeight ?? 800) - 160, store.editorHeight + d)))} />
       <div class="results-pane">
-        <ResultsGrid bind:this={grid} tab={queryTab} />
+        {#if queryTab.view === 'plan'}
+          <PlanView tab={queryTab} />
+        {:else}
+          <ResultsGrid bind:this={grid} tab={queryTab} />
+        {/if}
       </div>
     {:else if tab?.kind === 'structure'}
       <div class="results-pane"><StructureView {tab} /></div>
@@ -128,7 +145,9 @@
         <span class="muted">{profileName(tab.connId)} (disconnected)</span>
       {/if}
       <span class="grow"></span>
-      {#if queryTab?.response}
+      {#if queryTab?.view === 'plan' && queryTab.plan}
+        <span class="muted">{queryTab.plan.analyze ? 'explain analyze' : 'explain'} {fmtDuration(queryTab.plan.durationMs)}</span>
+      {:else if queryTab?.response}
         {@const r = queryTab.response.results[queryTab.activeResult]}
         {#if r?.columns?.length}
           <span>{r.rows.length.toLocaleString()}{r.truncated ? ` of ${r.rowCount.toLocaleString()}` : ''} rows{r.truncated ? ' (truncated)' : ''}</span>
@@ -170,6 +189,11 @@
   .limit { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-2); }
   .limit select { width: auto; padding: 2px 6px; font-size: 12px; }
   .grow { flex: 1; }
+  .segmented { display: inline-flex; }
+  .segmented button { border-radius: 0; }
+  .segmented button:first-child { border-radius: 5px 0 0 5px; }
+  .segmented button:last-child { border-radius: 0 5px 5px 0; border-left: none; }
+  .segmented button.active { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
   .hint { font-size: 11px; }
   .results-pane { flex: 1; min-height: 0; overflow: hidden; }
   .welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }

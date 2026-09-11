@@ -87,6 +87,26 @@ export namespace db {
 	        this.definition = source["definition"];
 	    }
 	}
+	export class ExplainResponse {
+	    plan: string;
+	    analyze: boolean;
+	    error: string;
+	    durationMs: number;
+	    cancelled: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ExplainResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.plan = source["plan"];
+	        this.analyze = source["analyze"];
+	        this.error = source["error"];
+	        this.durationMs = source["durationMs"];
+	        this.cancelled = source["cancelled"];
+	    }
+	}
 	export class IndexInfo {
 	    name: string;
 	    definition: string;
