@@ -38,6 +38,10 @@ export function FunctionDefinition(arg1, arg2) {
   return window['go']['main']['App']['FunctionDefinition'](arg1, arg2);
 }
 
+export function InstallStatStatements(arg1) {
+  return window['go']['main']['App']['InstallStatStatements'](arg1);
+}
+
 export function ListColumns(arg1, arg2, arg3) {
   return window['go']['main']['App']['ListColumns'](arg1, arg2, arg3);
 }
@@ -62,12 +66,20 @@ export function RelationInfo(arg1, arg2, arg3) {
   return window['go']['main']['App']['RelationInfo'](arg1, arg2, arg3);
 }
 
+export function ResetStatStatements(arg1) {
+  return window['go']['main']['App']['ResetStatStatements'](arg1);
+}
+
 export function RunQuery(arg1, arg2, arg3, arg4) {
   return window['go']['main']['App']['RunQuery'](arg1, arg2, arg3, arg4);
 }
 
 export function SaveProfile(arg1, arg2) {
   return window['go']['main']['App']['SaveProfile'](arg1, arg2);
+}
+
+export function StatStatements(arg1, arg2, arg3) {
+  return window['go']['main']['App']['StatStatements'](arg1, arg2, arg3);
 }
 
 export function TestConnection(arg1, arg2) {

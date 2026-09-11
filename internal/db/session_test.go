@@ -227,3 +227,40 @@ func TestExplain(t *testing.T) {
 		}
 	}
 }
+
+func TestStatStatements(t *testing.T) {
+	s := testSession(t)
+	ctx := context.Background()
+	// Make sure there is at least one distinct statement recorded.
+	if r := s.RunQuery(ctx, "st0", "select count(*) from app.orders where status = 'paid'", 1); r.Error != "" {
+		t.Fatal(r.Error)
+	}
+	resp, err := s.StatStatements(ctx, true, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Available {
+		t.Skipf("pg_stat_statements not installed: %s", resp.Message)
+	}
+	if len(resp.Statements) == 0 || resp.TotalCalls == 0 {
+		t.Fatalf("no statements returned: %+v", resp)
+	}
+	found := false
+	for _, st := range resp.Statements {
+		if strings.Contains(st.Query, "from app.orders where status") {
+			found = true
+			if st.Calls < 1 || st.Database != "inspect" || st.User == "" || st.TotalMs < 0 {
+				t.Errorf("bad row: %+v", st)
+			}
+		}
+	}
+	if !found {
+		t.Error("recorded statement not found in pg_stat_statements")
+	}
+	// Sorted by total time descending.
+	for i := 1; i < len(resp.Statements); i++ {
+		if resp.Statements[i].TotalMs > resp.Statements[i-1].TotalMs {
+			t.Errorf("not sorted at %d", i)
+		}
+	}
+}

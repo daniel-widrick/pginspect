@@ -29,7 +29,18 @@ export interface StructureTab {
   loading: boolean
 }
 
-export type Tab = QueryTab | StructureTab
+export interface StatsTab {
+  kind: 'stats'
+  id: string
+  title: string
+  connId: string
+  data: db.StatsResponse | null
+  error: string
+  loading: boolean
+  currentDBOnly: boolean
+}
+
+export type Tab = QueryTab | StructureTab | StatsTab
 
 export type Dialog =
   | { kind: 'profile'; profile: config.Profile | null }

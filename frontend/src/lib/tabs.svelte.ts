@@ -1,6 +1,6 @@
 // Tab lifecycle and query execution.
-import { RunQuery, CancelQuery, RelationInfo, Explain } from '../../wailsjs/go/main/App'
-import { store, activeTab, errorMessage, toast, type QueryTab, type StructureTab, type Tab } from './state.svelte'
+import { RunQuery, CancelQuery, RelationInfo, Explain, StatStatements } from '../../wailsjs/go/main/App'
+import { store, activeTab, errorMessage, toast, type QueryTab, type StructureTab, type StatsTab, type Tab } from './state.svelte'
 
 let counter = 0
 const nextId = () => `${Date.now().toString(36)}-${++counter}`
@@ -54,6 +54,35 @@ export async function openStructureTab(connId: string, schema: string, name: str
     live.error = errorMessage(e)
   } finally {
     live.loading = false
+  }
+}
+
+/** Opens (or focuses) the pg_stat_statements browser for a connection. */
+export async function openStatsTab(connId: string): Promise<void> {
+  const existing = store.tabs.find(t => t.kind === 'stats' && t.connId === connId) as StatsTab | undefined
+  if (existing) {
+    store.activeTabId = existing.id
+    return
+  }
+  const tab: StatsTab = {
+    kind: 'stats', id: nextId(), title: 'Query statistics', connId,
+    data: null, error: '', loading: false, currentDBOnly: true,
+  }
+  store.tabs.push(tab)
+  store.activeTabId = tab.id
+  await refreshStats(store.tabs[store.tabs.length - 1] as StatsTab)
+}
+
+export async function refreshStats(tab: StatsTab): Promise<void> {
+  if (tab.loading) return
+  tab.loading = true
+  tab.error = ''
+  try {
+    tab.data = await StatStatements(tab.connId, tab.currentDBOnly, 500)
+  } catch (e) {
+    tab.error = errorMessage(e)
+  } finally {
+    tab.loading = false
   }
 }
 

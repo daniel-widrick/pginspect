@@ -269,6 +269,41 @@ func (a *App) CancelQuery(connID, queryID string) bool {
 	return s.Cancel(queryID)
 }
 
+// ---- statistics -----------------------------------------------------------
+
+// StatStatements reads pg_stat_statements for a connection.
+func (a *App) StatStatements(connID string, currentDBOnly bool, limit int) (db.StatsResponse, error) {
+	s, err := a.conns.Get(connID)
+	if err != nil {
+		return db.StatsResponse{}, err
+	}
+	ctx, cancel := a.catalogCtx()
+	defer cancel()
+	return s.StatStatements(ctx, currentDBOnly, limit)
+}
+
+// ResetStatStatements clears pg_stat_statements counters.
+func (a *App) ResetStatStatements(connID string) error {
+	s, err := a.conns.Get(connID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := a.catalogCtx()
+	defer cancel()
+	return s.ResetStatStatements(ctx)
+}
+
+// InstallStatStatements runs CREATE EXTENSION pg_stat_statements.
+func (a *App) InstallStatStatements(connID string) error {
+	s, err := a.conns.Get(connID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := a.catalogCtx()
+	defer cancel()
+	return s.InstallStatStatements(ctx)
+}
+
 // ---- export ---------------------------------------------------------------
 
 // ExportCSV prompts for a file and writes the given result to it. NULL cells

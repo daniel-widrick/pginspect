@@ -1,7 +1,7 @@
 <script lang="ts">
   import { store } from '../lib/state.svelte'
   import { connect, disconnect, blankProfile } from '../lib/connections.svelte'
-  import { newQueryTab } from '../lib/tabs.svelte'
+  import { newQueryTab, openStatsTab } from '../lib/tabs.svelte'
   import SchemaTree from './SchemaTree.svelte'
 
   let collapsed = $state<Record<string, boolean>>({})
@@ -35,6 +35,7 @@
         <span class="actions">
           {#if info}
             <button class="ghost small" title="New query tab" onclick={() => newQueryTab(p.id)}>+</button>
+            <button class="ghost small" title="Query statistics (pg_stat_statements)" onclick={() => openStatsTab(p.id)}>∑</button>
             <button class="ghost small" title="Edit" onclick={() => edit(p.id)}>✎</button>
             <button class="ghost small" title="Disconnect" onclick={() => disconnect(p.id)}>⏏</button>
           {:else}

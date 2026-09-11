@@ -20,6 +20,12 @@ Features so far:
   discard most rows, sorts that spill to disk, and hash joins that batch.
   ANALYZE runs inside a transaction that is always rolled back, so it is safe
   on UPDATE and DELETE.
+- Query statistics: a pg_stat_statements browser (the sigma button on a
+  connection, or Tools > Query Statistics) sorted by total time, with calls,
+  mean and max, rows, cache hit ratio, temp spill, I/O time and share of
+  total. Expand a row for the full text and block counts, open it in the
+  editor, or reset the counters. Works on PG 12 through 17 and explains what
+  to configure when the extension is missing.
 - Light and dark themes following the system setting.
 
 ## Layout
@@ -57,8 +63,10 @@ some deliberately missing indexes):
 
 ```sh
 docker run -d --name pginspect-pg -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=inspect -p 5433:5432 postgres:17
+  -e POSTGRES_DB=inspect -p 5433:5432 postgres:17 \
+  -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track=all
 docker exec -i pginspect-pg psql -q -U postgres -d inspect < testdata/seed.sql
+docker exec pginspect-pg psql -U postgres -d inspect -c 'create extension pg_stat_statements'
 ```
 
 `testdata/explain-examples.sql` has queries to try with the plan viewer.

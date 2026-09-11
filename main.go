@@ -39,6 +39,8 @@ func main() {
 	query.AddText("Explain Analyze", keys.Combo("e", keys.CmdOrCtrlKey, keys.ShiftKey), emit("explainanalyze"))
 	query.AddSeparator()
 	query.AddText("Export Results as CSV...", keys.Combo("s", keys.CmdOrCtrlKey, keys.ShiftKey), emit("export"))
+	tools := appMenu.AddSubmenu("Tools")
+	tools.AddText("Query Statistics", keys.Combo("p", keys.CmdOrCtrlKey, keys.ShiftKey), emit("stats"))
 	appMenu.Append(menu.WindowMenu())
 
 	err := wails.Run(&options.App{

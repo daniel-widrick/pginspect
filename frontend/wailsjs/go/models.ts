@@ -310,6 +310,104 @@ export namespace db {
 	        this.comment = source["comment"];
 	    }
 	}
+	export class StatStatement {
+	    queryId: string;
+	    query: string;
+	    user: string;
+	    database: string;
+	    topLevel: boolean;
+	    calls: number;
+	    totalMs: number;
+	    meanMs: number;
+	    minMs: number;
+	    maxMs: number;
+	    stddevMs: number;
+	    planMs: number;
+	    rows: number;
+	    sharedHit: number;
+	    sharedRead: number;
+	    sharedDirtied: number;
+	    sharedWritten: number;
+	    tempRead: number;
+	    tempWritten: number;
+	    ioReadMs: number;
+	    ioWriteMs: number;
+	    walBytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new StatStatement(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.queryId = source["queryId"];
+	        this.query = source["query"];
+	        this.user = source["user"];
+	        this.database = source["database"];
+	        this.topLevel = source["topLevel"];
+	        this.calls = source["calls"];
+	        this.totalMs = source["totalMs"];
+	        this.meanMs = source["meanMs"];
+	        this.minMs = source["minMs"];
+	        this.maxMs = source["maxMs"];
+	        this.stddevMs = source["stddevMs"];
+	        this.planMs = source["planMs"];
+	        this.rows = source["rows"];
+	        this.sharedHit = source["sharedHit"];
+	        this.sharedRead = source["sharedRead"];
+	        this.sharedDirtied = source["sharedDirtied"];
+	        this.sharedWritten = source["sharedWritten"];
+	        this.tempRead = source["tempRead"];
+	        this.tempWritten = source["tempWritten"];
+	        this.ioReadMs = source["ioReadMs"];
+	        this.ioWriteMs = source["ioWriteMs"];
+	        this.walBytes = source["walBytes"];
+	    }
+	}
+	export class StatsResponse {
+	    available: boolean;
+	    installable: boolean;
+	    preloaded: boolean;
+	    message: string;
+	    statsReset: string;
+	    statements: StatStatement[];
+	    totalMs: number;
+	    totalCalls: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new StatsResponse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.available = source["available"];
+	        this.installable = source["installable"];
+	        this.preloaded = source["preloaded"];
+	        this.message = source["message"];
+	        this.statsReset = source["statsReset"];
+	        this.statements = this.convertValues(source["statements"], StatStatement);
+	        this.totalMs = source["totalMs"];
+	        this.totalCalls = source["totalCalls"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 

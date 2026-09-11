@@ -21,6 +21,8 @@ export function ExportCSV(arg1:Array<string>,arg2:Array<any>,arg3:string):Promis
 
 export function FunctionDefinition(arg1:string,arg2:number):Promise<string>;
 
+export function InstallStatStatements(arg1:string):Promise<void>;
+
 export function ListColumns(arg1:string,arg2:string,arg3:string):Promise<Array<db.ColumnInfo>>;
 
 export function ListFunctions(arg1:string,arg2:string):Promise<Array<db.Routine>>;
@@ -33,8 +35,12 @@ export function ListSchemas(arg1:string):Promise<Array<db.Schema>>;
 
 export function RelationInfo(arg1:string,arg2:string,arg3:string):Promise<db.RelationInfo>;
 
+export function ResetStatStatements(arg1:string):Promise<void>;
+
 export function RunQuery(arg1:string,arg2:string,arg3:string,arg4:number):Promise<db.QueryResponse>;
 
 export function SaveProfile(arg1:config.Profile,arg2:string):Promise<config.Profile>;
+
+export function StatStatements(arg1:string,arg2:boolean,arg3:number):Promise<db.StatsResponse>;
 
 export function TestConnection(arg1:config.Profile,arg2:string):Promise<string>;
