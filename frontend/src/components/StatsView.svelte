@@ -33,9 +33,41 @@
     return s.queryId + s.user + s.database + s.topLevel
   }
 
-  function explainExample(ex: db.QueryExample) {
+  /**
+   * A captured text still holds $n placeholders when the client bound its
+   * parameters over the extended protocol: the server never sees the values
+   * in any view, only the statement as sent. Such captures go through the
+   * parameter dialog like normalised statements; explaining them directly
+   * fails at bind (42P18) whenever a parameter's type cannot be inferred.
+   */
+  function isBound(ex: db.QueryExample): boolean {
+    return statementParams(ex.query).length > 0
+  }
+
+  /**
+   * pg_stat_activity cuts statement text at track_activity_query_size
+   * (1 kB by default). A cut text cannot be explained or run; the setting
+   * has to be raised on the server and it needs a restart.
+   */
+  function isTruncated(ex: db.QueryExample): boolean {
+    const max = tab.sampling?.maxQueryLength ?? 0
+    return max > 0 && ex.query.length >= max - 1
+  }
+
+  function explainExample(ex: db.QueryExample, row: db.StatStatement) {
+    const title = `stmt ${ex.queryId.slice(-6)}`
+    if (isTruncated(ex)) {
+      // The cut text cannot parse; the normalised statement is complete, so
+      // explain that and let the dialog collect the values.
+      explainStatement(tab.connId, row.query, title)
+      return
+    }
     const sql = ex.query.trim()
-    const t = newQueryTab(tab.connId, sql + '\n', `stmt ${ex.queryId.slice(-6)}`)
+    if (isBound(ex)) {
+      explainStatement(tab.connId, sql, title)
+      return
+    }
+    const t = newQueryTab(tab.connId, sql + '\n', title)
     void explainQuery(t, sql, false)
   }
 
@@ -190,14 +222,19 @@ CREATE EXTENSION pg_stat_statements;                # in each database to inspec
                   <pre class="sql">{s.query.trim()}</pre>
                   {#if examplesFor === s.queryId && examples.length}
                     <div class="examples">
-                      <div class="exhead">Real executions seen in pg_stat_activity{tab.sampling?.maxQueryLength ? ` (text cut at ${tab.sampling.maxQueryLength} chars)` : ''}</div>
+                      <div class="exhead">Executions seen in pg_stat_activity{tab.sampling?.maxQueryLength ? ` (text cut at ${tab.sampling.maxQueryLength} chars)` : ''}</div>
                       {#each examples as ex (ex.query)}
                         <div class="example">
                           <pre class="sql ex">{ex.query.trim()}</pre>
                           <div class="exmeta">
                             <span>{ex.count} run{ex.count === 1 ? '' : 's'}, last {fmtTime(ex.lastSeen as any)}</span>
+                            {#if isTruncated(ex)}
+                              <span class="bound" title="pg_stat_activity stores at most track_activity_query_size characters of a statement. Raise it in postgresql.conf (needs a restart) to capture longer statements whole. Explain uses the complete normalised statement instead.">cut at {tab.sampling?.maxQueryLength} chars by track_activity_query_size; Explain uses the full statement</span>
+                            {:else if isBound(ex)}
+                              <span class="bound" title="The client sent this statement with bound parameters. The server exposes the statement text but never the values, so Explain will ask for them.">bind parameters, values not visible</span>
+                            {/if}
                             <span class="grow"></span>
-                            <button class="small" onclick={(e) => { e.stopPropagation(); explainExample(ex) }}>Explain</button>
+                            <button class="small" onclick={(e) => { e.stopPropagation(); explainExample(ex, s) }}>Explain</button>
                             <button class="small" onclick={(e) => { e.stopPropagation(); newQueryTab(tab.connId, ex.query.trim() + '\n', `stmt ${ex.queryId.slice(-6)}`) }}>Open in editor</button>
                             <button class="small" onclick={(e) => { e.stopPropagation(); void ClipboardSetText(ex.query); toast('Copied') }}>Copy</button>
                           </div>
@@ -273,6 +310,7 @@ CREATE EXTENSION pg_stat_statements;                # in each database to inspec
   .exhead { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-2); margin: 4px 0 6px; }
   .example { border-left: 3px solid var(--ok); padding-left: 8px; margin-bottom: 8px; }
   .sql.ex { margin: 0 0 4px; max-height: 160px; }
-  .exmeta { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--fg-2); }
+  .exmeta { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--fg-2); flex-wrap: wrap; }
+  .bound { color: var(--warn); }
   .exnone { margin-bottom: 8px; }
 </style>

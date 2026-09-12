@@ -61,8 +61,13 @@ Features so far:
   their constants) it sees for each query id. A statement is visible while
   it runs and while its backend sits idle afterwards, so even fast queries
   are usually caught on busy systems. Captured examples show under a
-  statistics row with one-click Explain. Needs PostgreSQL 14 or newer;
-  text is cut at track_activity_query_size (default 1 kB).
+  statistics row with one-click Explain. Needs PostgreSQL 14 or newer.
+  Two limits come from the server: a client that binds parameters over the
+  extended protocol (pgx, JDBC, psycopg and most drivers) shows its statement
+  with `$n` placeholders because the values never reach any view, so those
+  captures go through the parameter dialog; and text is cut at
+  track_activity_query_size (default 1 kB), in which case Explain uses the
+  complete normalised statement instead.
 - Light and dark themes following the system setting.
 
 ## Layout
