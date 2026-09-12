@@ -25,7 +25,9 @@ Features so far:
   mean and max, rows, cache hit ratio, temp spill, I/O time and share of
   total. Expand a row for the full text and block counts, open it in the
   editor, or reset the counters. Works on PG 12 through 17 and explains what
-  to configure when the extension is missing.
+  to configure when the extension is missing. Explain from a row opens the
+  statement in a tab with its plan; parameterised statements ask for values
+  first, or use EXPLAIN (GENERIC_PLAN) on PostgreSQL 16 and newer.
 - Light and dark themes following the system setting.
 
 ## Layout

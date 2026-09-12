@@ -67,6 +67,7 @@ export async function openStatsTab(connId: string): Promise<void> {
   const tab: StatsTab = {
     kind: 'stats', id: nextId(), title: 'Query statistics', connId,
     data: null, error: '', loading: false, currentDBOnly: true,
+    filter: '', sortKey: 'totalMs', sortDesc: true, includeNested: false, expanded: null,
   }
   store.tabs.push(tab)
   store.activeTabId = tab.id
@@ -144,7 +145,7 @@ export async function explainActive(analyze: boolean): Promise<void> {
   await explainQuery(tab, sql, analyze)
 }
 
-export async function explainQuery(tab: QueryTab, sql: string, analyze: boolean): Promise<void> {
+export async function explainQuery(tab: QueryTab, sql: string, analyze: boolean, generic = false): Promise<void> {
   if (tab.running) return
   if (!sql.trim()) return
   if (!store.connected[tab.connId]) {
@@ -155,12 +156,41 @@ export async function explainQuery(tab: QueryTab, sql: string, analyze: boolean)
   tab.queryId = nextId()
   tab.view = 'plan'
   try {
-    tab.plan = await Explain(tab.connId, tab.queryId, sql, analyze)
+    tab.plan = await Explain(tab.connId, tab.queryId, sql, analyze, generic)
   } catch (e) {
-    tab.plan = { plan: '', analyze, error: errorMessage(e), durationMs: 0, cancelled: false } as any
+    tab.plan = { plan: '', analyze, generic, error: errorMessage(e), durationMs: 0, cancelled: false } as any
   } finally {
     tab.running = false
   }
+}
+
+/** Numbered parameters ($1, $2, ...) present in a normalised statement. */
+export function statementParams(sql: string): number[] {
+  const seen = new Set<number>()
+  for (const m of sql.matchAll(/\$(\d+)/g)) seen.add(Number(m[1]))
+  return [...seen].sort((a, b) => a - b)
+}
+
+/** Replaces $n placeholders with the given SQL literals. */
+export function substituteParams(sql: string, values: Record<number, string>): string {
+  return sql.replace(/\$(\d+)/g, (m, n) => {
+    const v = values[Number(n)]
+    return v === undefined || v.trim() === '' ? m : `(${v.trim()})`
+  })
+}
+
+/**
+ * Explains a statement taken from pg_stat_statements. Parameterised
+ * statements go through a dialog first; the rest open in a tab immediately.
+ */
+export function explainStatement(connId: string, sql: string, title: string): void {
+  const params = statementParams(sql)
+  if (params.length === 0) {
+    const tab = newQueryTab(connId, sql.trim() + '\n', title)
+    void explainQuery(tab, sql, false)
+    return
+  }
+  store.dialog = { kind: 'params', connId, sql, params, title }
 }
 
 export async function cancelQuery(tab: QueryTab): Promise<void> {

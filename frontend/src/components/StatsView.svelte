@@ -3,18 +3,13 @@
   import { ResetStatStatements, InstallStatStatements } from '../../wailsjs/go/main/App'
   import type { db } from '../../wailsjs/go/models'
   import { toast, errorMessage, type StatsTab } from '../lib/state.svelte'
-  import { newQueryTab, refreshStats } from '../lib/tabs.svelte'
+  import { newQueryTab, refreshStats, explainStatement, statementParams } from '../lib/tabs.svelte'
   import { fmtMs, fmtNum, pct } from '../lib/plan'
 
   interface Props { tab: StatsTab }
   let { tab }: Props = $props()
 
   type Key = 'totalMs' | 'calls' | 'meanMs' | 'maxMs' | 'rows' | 'hit' | 'temp' | 'ioReadMs'
-  let sortKey = $state<Key>('totalMs')
-  let sortDesc = $state(true)
-  let filter = $state('')
-  let expanded = $state<string | null>(null)
-  let includeNested = $state(false)
   let busy = $state(false)
 
   const columns: { key: Key; label: string; title: string }[] = [
@@ -40,15 +35,16 @@
 
   const rows = $derived.by(() => {
     const list = tab.data?.statements ?? []
-    const f = filter.trim().toLowerCase()
-    const filtered = list.filter(s => (includeNested || s.topLevel) && (!f || s.query.toLowerCase().includes(f) || s.user.toLowerCase().includes(f)))
-    const dir = sortDesc ? -1 : 1
-    return [...filtered].sort((a, b) => dir * (value(a, sortKey) - value(b, sortKey)))
+    const f = tab.filter.trim().toLowerCase()
+    const filtered = list.filter(s => (tab.includeNested || s.topLevel) && (!f || s.query.toLowerCase().includes(f) || s.user.toLowerCase().includes(f)))
+    const dir = tab.sortDesc ? -1 : 1
+    const k = tab.sortKey as Key
+    return [...filtered].sort((a, b) => dir * (value(a, k) - value(b, k)))
   })
 
   function sortBy(k: Key) {
-    if (sortKey === k) sortDesc = !sortDesc
-    else { sortKey = k; sortDesc = true }
+    if (tab.sortKey === k) tab.sortDesc = !tab.sortDesc
+    else { tab.sortKey = k; tab.sortDesc = true }
   }
 
   function oneLine(q: string): string {
@@ -87,9 +83,9 @@
 
 <div class="stats">
   <div class="toolbar">
-    <input type="text" placeholder="Filter by query text or user" bind:value={filter} />
+    <input type="text" placeholder="Filter by query text or user" bind:value={tab.filter} />
     <label class="check"><input type="checkbox" checked={tab.currentDBOnly} onchange={toggleScope} /> This database only</label>
-    <label class="check" title="Statements run inside functions and procedures"><input type="checkbox" bind:checked={includeNested} /> Include nested</label>
+    <label class="check" title="Statements run inside functions and procedures"><input type="checkbox" bind:checked={tab.includeNested} /> Include nested</label>
     <span class="grow"></span>
     {#if tab.data?.available}
       <span class="muted small">
@@ -123,7 +119,7 @@ CREATE EXTENSION pg_stat_statements;                # in each database to inspec
             <th class="q">Query</th>
             {#each columns as c}
               <th class="n" onclick={() => sortBy(c.key)} title={c.title}>
-                {c.label}{#if sortKey === c.key}<span class="sort">{sortDesc ? '▼' : '▲'}</span>{/if}
+                {c.label}{#if tab.sortKey === c.key}<span class="sort">{tab.sortDesc ? '▼' : '▲'}</span>{/if}
               </th>
             {/each}
             <th class="share">Share of total time</th>
@@ -134,7 +130,7 @@ CREATE EXTENSION pg_stat_statements;                # in each database to inspec
             {@const share = tab.data.totalMs ? s.totalMs / tab.data.totalMs : 0}
             {@const hit = hitRatio(s)}
             {@const key = s.queryId + s.user + s.database + s.topLevel}
-            <tr class:open={expanded === key} onclick={() => (expanded = expanded === key ? null : key)}>
+            <tr class:open={tab.expanded === key} onclick={() => (tab.expanded = tab.expanded === key ? null : key)}>
               <td class="q" title={s.query}>
                 {#if !s.topLevel}<span class="nested" title="Nested statement (inside a function)">nested</span>{/if}
                 <span class="qtext">{oneLine(s.query)}</span>
@@ -149,7 +145,7 @@ CREATE EXTENSION pg_stat_statements;                # in each database to inspec
               <td class="n">{s.ioReadMs ? fmtMs(s.ioReadMs) : ''}</td>
               <td class="share"><span class="bar" style="width: {Math.max(0.5, share * 100)}%"></span><span class="pct">{pct(share)}</span></td>
             </tr>
-            {#if expanded === key}
+            {#if tab.expanded === key}
               <tr class="detail">
                 <td colspan="10">
                   <pre class="sql">{s.query.trim()}</pre>
@@ -163,6 +159,8 @@ CREATE EXTENSION pg_stat_statements;                # in each database to inspec
                     {#if s.tempRead || s.tempWritten}<span>temp: {fmtNum(s.tempRead)} read, {fmtNum(s.tempWritten)} written</span>{/if}
                     {#if s.walBytes}<span>WAL {fmtBytes(s.walBytes)}</span>{/if}
                     <span class="grow"></span>
+                    <button class="small primary" onclick={(e) => { e.stopPropagation(); explainStatement(tab.connId, s.query, `stmt ${s.queryId.slice(-6)}`) }}
+                            title={statementParams(s.query).length ? 'Explain after filling in parameter values' : 'Explain in a new tab'}>Explain</button>
                     <button class="small" onclick={(e) => { e.stopPropagation(); openInEditor(s) }}>Open in editor</button>
                     <button class="small" onclick={(e) => { e.stopPropagation(); void ClipboardSetText(s.query); toast('Copied') }}>Copy</button>
                   </div>

@@ -90,6 +90,7 @@ export namespace db {
 	export class ExplainResponse {
 	    plan: string;
 	    analyze: boolean;
+	    generic: boolean;
 	    error: string;
 	    durationMs: number;
 	    cancelled: boolean;
@@ -102,6 +103,7 @@ export namespace db {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.plan = source["plan"];
 	        this.analyze = source["analyze"];
+	        this.generic = source["generic"];
 	        this.error = source["error"];
 	        this.durationMs = source["durationMs"];
 	        this.cancelled = source["cancelled"];

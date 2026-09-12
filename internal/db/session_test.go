@@ -197,17 +197,17 @@ func TestExplain(t *testing.T) {
 	s := testSession(t)
 	ctx := context.Background()
 
-	plain := s.Explain(ctx, "e1", "select * from app.orders where customer_id = 1;", false)
+	plain := s.Explain(ctx, "e1", "select * from app.orders where customer_id = 1;", false, false)
 	if plain.Error != "" || !strings.Contains(plain.Plan, `"Node Type"`) || strings.Contains(plain.Plan, "Actual Rows") {
 		t.Errorf("plain explain: err=%q plan=%.120s", plain.Error, plain.Plan)
 	}
 
-	analyzed := s.Explain(ctx, "e2", "update app.orders set status = 'paid' where id = 1", true)
+	analyzed := s.Explain(ctx, "e2", "update app.orders set status = 'paid' where id = 1", true, false)
 	if analyzed.Error != "" || !strings.Contains(analyzed.Plan, "Actual Rows") || !strings.Contains(analyzed.Plan, "Execution Time") {
 		t.Errorf("analyze explain: err=%q plan=%.120s", analyzed.Error, analyzed.Plan)
 	}
 	// The update must have been rolled back: the marker value must not persist.
-	marker := s.Explain(ctx, "e4", "update app.orders set total = 12345.67 where id = 1", true)
+	marker := s.Explain(ctx, "e4", "update app.orders set total = 12345.67 where id = 1", true, false)
 	if marker.Error != "" {
 		t.Fatal(marker.Error)
 	}
@@ -216,7 +216,7 @@ func TestExplain(t *testing.T) {
 		t.Errorf("explain analyze on an update was not rolled back (err=%q)", after.Error)
 	}
 
-	bad := s.Explain(ctx, "e6", "select * from nope", true)
+	bad := s.Explain(ctx, "e6", "select * from nope", true, false)
 	if !strings.Contains(bad.Error, "42P01") {
 		t.Errorf("bad explain error: %q", bad.Error)
 	}
@@ -262,5 +262,28 @@ func TestStatStatements(t *testing.T) {
 		if resp.Statements[i].TotalMs > resp.Statements[i-1].TotalMs {
 			t.Errorf("not sorted at %d", i)
 		}
+	}
+}
+
+func TestExplainGeneric(t *testing.T) {
+	s := testSession(t)
+	ctx := context.Background()
+	var major int
+	if err := s.pool.QueryRow(ctx, "select current_setting('server_version_num')::int / 10000").Scan(&major); err != nil {
+		t.Fatal(err)
+	}
+	if major < 16 {
+		t.Skip("GENERIC_PLAN needs PostgreSQL 16")
+	}
+	resp := s.Explain(ctx, "g1", "select * from app.orders where customer_id = $1 and status = $2", false, true)
+	if resp.Error != "" || !resp.Generic || !strings.Contains(resp.Plan, "Index") && !strings.Contains(resp.Plan, "Seq Scan") {
+		t.Errorf("generic explain: err=%q plan=%.200s", resp.Error, resp.Plan)
+	}
+	if strings.Contains(resp.Plan, "Actual Rows") {
+		t.Error("generic plan must not execute")
+	}
+	both := s.Explain(ctx, "g2", "select 1", true, true)
+	if both.Error == "" {
+		t.Error("analyze+generic should be rejected")
 	}
 }

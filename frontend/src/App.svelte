@@ -12,6 +12,7 @@
   import StatsView from './components/StatsView.svelte'
   import ProfileDialog from './components/ProfileDialog.svelte'
   import PasswordDialog from './components/PasswordDialog.svelte'
+  import ParamsDialog from './components/ParamsDialog.svelte'
   import Splitter from './components/Splitter.svelte'
 
   let editor = $state<Editor>()
@@ -167,6 +168,8 @@
     <ProfileDialog profile={store.dialog.profile} />
   {:else if store.dialog?.kind === 'password'}
     <PasswordDialog profileId={store.dialog.profileId} />
+  {:else if store.dialog?.kind === 'params'}
+    <ParamsDialog request={store.dialog} />
   {/if}
 
   {#if store.toast}

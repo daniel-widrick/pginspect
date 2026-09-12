@@ -59,7 +59,8 @@
   {:else if parsed.plan}
     {@const p = parsed.plan}
     <div class="summary">
-      <span class="mode" class:analyze={p.analyze}>{p.analyze ? 'EXPLAIN ANALYZE' : 'EXPLAIN'}</span>
+      <span class="mode" class:analyze={p.analyze}>{p.analyze ? 'EXPLAIN ANALYZE' : tab.plan.generic ? 'GENERIC PLAN' : 'EXPLAIN'}</span>
+      {#if tab.plan.generic}<span class="muted" title="Planned without parameter values, so selectivity estimates use defaults rather than statistics for specific values.">parameters unbound</span>{/if}
       {#if p.analyze}
         <span><b>{fmtMs(p.executionTime)}</b> execution</span>
         <span class="muted">{fmtMs(p.planningTime)} planning</span>

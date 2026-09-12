@@ -252,12 +252,13 @@ func (a *App) RunQuery(connID, queryID, sql string, maxRows int) (db.QueryRespon
 
 // Explain returns the plan for a statement as EXPLAIN JSON. With analyze the
 // statement executes inside a transaction that is rolled back afterwards.
-func (a *App) Explain(connID, queryID, sql string, analyze bool) (db.ExplainResponse, error) {
+// With generic (PG16+) the statement may contain $n parameters.
+func (a *App) Explain(connID, queryID, sql string, analyze, generic bool) (db.ExplainResponse, error) {
 	s, err := a.conns.Get(connID)
 	if err != nil {
 		return db.ExplainResponse{}, err
 	}
-	return s.Explain(a.ctx, queryID, sql, analyze), nil
+	return s.Explain(a.ctx, queryID, sql, analyze, generic), nil
 }
 
 // CancelQuery asks the server to abort a running query.

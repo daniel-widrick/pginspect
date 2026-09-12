@@ -38,6 +38,12 @@ export interface StatsTab {
   error: string
   loading: boolean
   currentDBOnly: boolean
+  // View state lives on the tab so it survives switching tabs.
+  filter: string
+  sortKey: string
+  sortDesc: boolean
+  includeNested: boolean
+  expanded: string | null
 }
 
 export type Tab = QueryTab | StructureTab | StatsTab
@@ -45,6 +51,7 @@ export type Tab = QueryTab | StructureTab | StatsTab
 export type Dialog =
   | { kind: 'profile'; profile: config.Profile | null }
   | { kind: 'password'; profileId: string; error: string; busy: boolean }
+  | { kind: 'params'; connId: string; sql: string; params: number[]; title: string }
   | null
 
 /** Table columns known per connection, used for editor autocompletion. */
@@ -75,6 +82,12 @@ export function toast(message: string, ms = 3500) {
 
 export function activeTab(): Tab | undefined {
   return store.tabs.find(t => t.id === store.activeTabId)
+}
+
+/** Major server version for a connection, or 0 when unknown. */
+export function serverMajor(connId: string): number {
+  const v = store.connected[connId]?.serverVersion ?? ''
+  return parseInt(v, 10) || 0
 }
 
 export function profileName(id: string): string {

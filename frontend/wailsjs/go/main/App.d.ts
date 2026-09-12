@@ -15,7 +15,7 @@ export function DeleteProfile(arg1:string):Promise<void>;
 
 export function Disconnect(arg1:string):Promise<void>;
 
-export function Explain(arg1:string,arg2:string,arg3:string,arg4:boolean):Promise<db.ExplainResponse>;
+export function Explain(arg1:string,arg2:string,arg3:string,arg4:boolean,arg5:boolean):Promise<db.ExplainResponse>;
 
 export function ExportCSV(arg1:Array<string>,arg2:Array<any>,arg3:string):Promise<string>;
 

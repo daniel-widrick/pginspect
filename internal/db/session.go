@@ -226,8 +226,11 @@ func (s *Session) runScript(ctx context.Context, conn *pgx.Conn, sql string, max
 
 // ExplainResponse carries a plan in EXPLAIN's JSON format.
 type ExplainResponse struct {
-	Plan       string `json:"plan"`
-	Analyze    bool   `json:"analyze"`
+	Plan    string `json:"plan"`
+	Analyze bool   `json:"analyze"`
+	// Generic is set when the plan was produced with GENERIC_PLAN (PG16+),
+	// which plans a statement containing $n parameters without values.
+	Generic    bool   `json:"generic"`
 	Error      string `json:"error"`
 	DurationMs int64  `json:"durationMs"`
 	Cancelled  bool   `json:"cancelled"`
@@ -235,16 +238,24 @@ type ExplainResponse struct {
 
 // Explain runs EXPLAIN (FORMAT JSON) on a single statement. With analyze the
 // statement really executes, inside a transaction that is always rolled back,
-// so explaining an UPDATE or DELETE leaves no trace.
-func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze bool) ExplainResponse {
+// so explaining an UPDATE or DELETE leaves no trace. With generic, the
+// statement may contain $1-style parameters and is planned without values
+// (PostgreSQL 16 or newer); analyze and generic are mutually exclusive.
+func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze, generic bool) ExplainResponse {
 	stmt := strings.TrimSpace(sql)
 	stmt = strings.TrimRight(stmt, "; \t\r\n")
 	if stmt == "" {
 		return ExplainResponse{Error: "nothing to explain"}
 	}
+	if analyze && generic {
+		return ExplainResponse{Error: "a generic plan cannot be combined with ANALYZE"}
+	}
 	opts := "FORMAT JSON, COSTS, SETTINGS"
 	if analyze {
 		opts = "ANALYZE, BUFFERS, TIMING, " + opts
+	}
+	if generic {
+		opts = "GENERIC_PLAN, " + opts
 	}
 	script := "EXPLAIN (" + opts + ")\n" + stmt
 	if analyze {
@@ -263,7 +274,7 @@ func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze bool
 	}()
 
 	start := time.Now()
-	out := ExplainResponse{Analyze: analyze}
+	out := ExplainResponse{Analyze: analyze, Generic: generic}
 	finish := func(err error) ExplainResponse {
 		out.DurationMs = time.Since(start).Milliseconds()
 		if err != nil {
