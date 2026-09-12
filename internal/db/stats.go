@@ -136,8 +136,12 @@ func (s *Session) StatStatements(ctx context.Context, currentDBOnly bool, limit 
 		return resp, err
 	}
 	for _, raw := range raws {
+		// UseNumber keeps 64-bit values such as queryid exact; float64 would
+		// round anything above 2^53.
+		dec := json.NewDecoder(strings.NewReader(raw))
+		dec.UseNumber()
 		var m map[string]any
-		if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		if err := dec.Decode(&m); err != nil {
 			return resp, err
 		}
 		resp.Statements = append(resp.Statements, statFromMap(m))
@@ -148,12 +152,11 @@ func (s *Session) StatStatements(ctx context.Context, currentDBOnly bool, limit 
 	if err := s.pool.QueryRow(ctx, totalQ).Scan(&resp.TotalMs, &resp.TotalCalls); err != nil {
 		return resp, err
 	}
-	if cols["stats_reset"] || true {
-		var reset *string
-		_ = s.pool.QueryRow(ctx, `select stats_reset::text from pg_stat_statements_info`).Scan(&reset)
-		if reset != nil {
-			resp.StatsReset = *reset
-		}
+	// pg_stat_statements_info exists from PG14; ignore errors on older servers.
+	var reset *string
+	_ = s.pool.QueryRow(ctx, `select stats_reset::text from pg_stat_statements_info`).Scan(&reset)
+	if reset != nil {
+		resp.StatsReset = *reset
 	}
 	return resp, nil
 }
@@ -161,8 +164,23 @@ func (s *Session) StatStatements(ctx context.Context, currentDBOnly bool, limit 
 func statFromMap(m map[string]any) StatStatement {
 	f := func(keys ...string) float64 {
 		for _, k := range keys {
-			if v, ok := m[k].(float64); ok {
-				return v
+			if v, ok := m[k].(json.Number); ok {
+				if x, err := v.Float64(); err == nil {
+					return x
+				}
+			}
+		}
+		return 0
+	}
+	i := func(keys ...string) int64 {
+		for _, k := range keys {
+			if v, ok := m[k].(json.Number); ok {
+				if x, err := v.Int64(); err == nil {
+					return x
+				}
+				if x, err := v.Float64(); err == nil {
+					return int64(x)
+				}
 			}
 		}
 		return 0
@@ -171,8 +189,8 @@ func statFromMap(m map[string]any) StatStatement {
 		switch v := m[k].(type) {
 		case string:
 			return v
-		case float64:
-			return fmt.Sprintf("%.0f", v)
+		case json.Number:
+			return v.String()
 		}
 		return ""
 	}
@@ -186,23 +204,23 @@ func statFromMap(m map[string]any) StatStatement {
 		User:          str("usename"),
 		Database:      str("datname"),
 		TopLevel:      topLevel,
-		Calls:         int64(f("calls")),
+		Calls:         i("calls"),
 		TotalMs:       f("total_exec_time", "total_time"),
 		MeanMs:        f("mean_exec_time", "mean_time"),
 		MinMs:         f("min_exec_time", "min_time"),
 		MaxMs:         f("max_exec_time", "max_time"),
 		StddevMs:      f("stddev_exec_time", "stddev_time"),
 		PlanMs:        f("total_plan_time"),
-		Rows:          int64(f("rows")),
-		SharedHit:     int64(f("shared_blks_hit")),
-		SharedRead:    int64(f("shared_blks_read")),
-		SharedDirtied: int64(f("shared_blks_dirtied")),
-		SharedWritten: int64(f("shared_blks_written")),
-		TempRead:      int64(f("temp_blks_read")),
-		TempWritten:   int64(f("temp_blks_written")),
+		Rows:          i("rows"),
+		SharedHit:     i("shared_blks_hit"),
+		SharedRead:    i("shared_blks_read"),
+		SharedDirtied: i("shared_blks_dirtied"),
+		SharedWritten: i("shared_blks_written"),
+		TempRead:      i("temp_blks_read"),
+		TempWritten:   i("temp_blks_written"),
 		IOReadMs:      f("shared_blk_read_time", "blk_read_time"),
 		IOWriteMs:     f("shared_blk_write_time", "blk_write_time"),
-		WalBytes:      int64(f("wal_bytes")),
+		WalBytes:      i("wal_bytes"),
 	}
 }
 

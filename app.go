@@ -305,6 +305,47 @@ func (a *App) InstallStatStatements(connID string) error {
 	return s.InstallStatStatements(ctx)
 }
 
+// StartActivitySampling begins collecting real statement texts from
+// pg_stat_activity for the connection.
+func (a *App) StartActivitySampling(connID string) error {
+	s, err := a.conns.Get(connID)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := a.catalogCtx()
+	defer cancel()
+	return s.StartSampling(ctx)
+}
+
+// StopActivitySampling pauses collection; examples already seen are kept.
+func (a *App) StopActivitySampling(connID string) {
+	if s, err := a.conns.Get(connID); err == nil {
+		s.StopSampling()
+	}
+}
+
+// ActivitySampling reports sampler status and example counts per query_id.
+func (a *App) ActivitySampling(connID string) (db.SamplingStatus, error) {
+	s, err := a.conns.Get(connID)
+	if err != nil {
+		return db.SamplingStatus{}, err
+	}
+	return s.Sampling(), nil
+}
+
+// QueryExamples returns real statement texts seen for a query_id.
+func (a *App) QueryExamples(connID, queryID string) ([]db.QueryExample, error) {
+	s, err := a.conns.Get(connID)
+	if err != nil {
+		return nil, err
+	}
+	ex := s.Examples(queryID)
+	if ex == nil {
+		ex = []db.QueryExample{}
+	}
+	return ex, nil
+}
+
 // ---- export ---------------------------------------------------------------
 
 // ExportCSV prompts for a file and writes the given result to it. NULL cells

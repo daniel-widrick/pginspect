@@ -1,5 +1,5 @@
 // Tab lifecycle and query execution.
-import { RunQuery, CancelQuery, RelationInfo, Explain, StatStatements } from '../../wailsjs/go/main/App'
+import { RunQuery, CancelQuery, RelationInfo, Explain, StatStatements, StartActivitySampling, StopActivitySampling, ActivitySampling } from '../../wailsjs/go/main/App'
 import { store, activeTab, errorMessage, toast, type QueryTab, type StructureTab, type StatsTab, type Tab } from './state.svelte'
 
 let counter = 0
@@ -68,10 +68,32 @@ export async function openStatsTab(connId: string): Promise<void> {
     kind: 'stats', id: nextId(), title: 'Query statistics', connId,
     data: null, error: '', loading: false, currentDBOnly: true,
     filter: '', sortKey: 'totalMs', sortDesc: true, includeNested: false, expanded: null,
+    sampling: null, samplingError: '',
   }
   store.tabs.push(tab)
   store.activeTabId = tab.id
-  await refreshStats(store.tabs[store.tabs.length - 1] as StatsTab)
+  const live = store.tabs[store.tabs.length - 1] as StatsTab
+  await Promise.all([refreshStats(live), setSampling(live, true)])
+}
+
+/** Starts or stops capturing real statement texts from pg_stat_activity. */
+export async function setSampling(tab: StatsTab, on: boolean): Promise<void> {
+  tab.samplingError = ''
+  try {
+    if (on) await StartActivitySampling(tab.connId)
+    else await StopActivitySampling(tab.connId)
+  } catch (e) {
+    tab.samplingError = errorMessage(e)
+  }
+  await refreshSampling(tab)
+}
+
+export async function refreshSampling(tab: StatsTab): Promise<void> {
+  try {
+    tab.sampling = await ActivitySampling(tab.connId)
+  } catch {
+    tab.sampling = null
+  }
 }
 
 export async function refreshStats(tab: StatsTab): Promise<void> {

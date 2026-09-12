@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -257,6 +258,15 @@ func TestStatStatements(t *testing.T) {
 	if !found {
 		t.Error("recorded statement not found in pg_stat_statements")
 	}
+	// Query ids are 64-bit and must not be rounded through float64.
+	for _, st := range resp.Statements {
+		var exact string
+		err := s.pool.QueryRow(ctx, `select queryid::text from pg_stat_statements where queryid::text = $1 limit 1`, st.QueryID).Scan(&exact)
+		if err != nil || exact != st.QueryID {
+			t.Errorf("queryid %q does not exist exactly in pg_stat_statements (err=%v)", st.QueryID, err)
+			break
+		}
+	}
 	// Sorted by total time descending.
 	for i := 1; i < len(resp.Statements); i++ {
 		if resp.Statements[i].TotalMs > resp.Statements[i-1].TotalMs {
@@ -285,5 +295,72 @@ func TestExplainGeneric(t *testing.T) {
 	both := s.Explain(ctx, "g2", "select 1", true, true)
 	if both.Error == "" {
 		t.Error("analyze+generic should be rejected")
+	}
+}
+
+func TestActivitySampling(t *testing.T) {
+	s := testSession(t)
+	ctx := context.Background()
+	if err := s.StartSampling(ctx); err != nil {
+		t.Skipf("sampling unsupported: %v", err)
+	}
+	defer s.StopSampling()
+	// Run a statement with a distinctive constant; its backend goes idle with
+	// the text still in pg_stat_activity, so the next sample should catch it.
+	if r := s.RunQuery(ctx, "smp", "select count(*) from app.orders where customer_id = 424242", 1); r.Error != "" {
+		t.Fatal(r.Error)
+	}
+	var qid string
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && qid == "" {
+		time.Sleep(250 * time.Millisecond)
+		st := s.Sampling()
+		for id := range st.Counts {
+			for _, ex := range s.Examples(id) {
+				if strings.Contains(ex.Query, "424242") {
+					qid = id
+				}
+			}
+		}
+	}
+	if qid == "" {
+		t.Fatal("statement with real constant was not captured from pg_stat_activity")
+	}
+	// The same query_id must match what pg_stat_statements reports.
+	stats, err := s.StatStatements(ctx, true, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	matched := false
+	for _, st := range stats.Statements {
+		if st.QueryID == qid && strings.Contains(st.Query, "customer_id = $1") {
+			matched = true
+		}
+	}
+	if !matched {
+		t.Errorf("query_id %s from pg_stat_activity not found in pg_stat_statements", qid)
+	}
+	if st := s.Sampling(); !st.Running || st.Samples == 0 || st.MaxQueryLength == 0 {
+		t.Errorf("status: %+v", st)
+	}
+
+	// Consecutive executions on the same backend, spaced wider than the
+	// sample interval, must each be captured: the sampler's own polling must
+	// not overwrite the backend's last-query text.
+	for _, v := range []int{111, 222, 333} {
+		q := fmt.Sprintf("select count(*) from app.orders where customer_id = %d", v)
+		if r := s.RunQuery(ctx, "smp", q, 1); r.Error != "" {
+			t.Fatal(r.Error)
+		}
+		time.Sleep(1300 * time.Millisecond)
+	}
+	got := map[string]bool{}
+	for _, ex := range s.Examples(qid) {
+		got[ex.Query] = true
+	}
+	for _, v := range []int{111, 222, 333} {
+		if !got[fmt.Sprintf("select count(*) from app.orders where customer_id = %d", v)] {
+			t.Errorf("execution with constant %d was not captured; have %v", v, got)
+		}
 	}
 }

@@ -28,6 +28,14 @@ Features so far:
   to configure when the extension is missing. Explain from a row opens the
   statement in a tab with its plan; parameterised statements ask for values
   first, or use EXPLAIN (GENERIC_PLAN) on PostgreSQL 16 and newer.
+- Real statement capture: pg_stat_statements only keeps normalised text, so
+  while "Capture examples" is on, pginspect polls pg_stat_activity once a
+  second over a dedicated connection and keeps the actual statements (with
+  their constants) it sees for each query id. A statement is visible while
+  it runs and while its backend sits idle afterwards, so even fast queries
+  are usually caught on busy systems. Captured examples show under a
+  statistics row with one-click Explain. Needs PostgreSQL 14 or newer;
+  text is cut at track_activity_query_size (default 1 kB).
 - Light and dark themes following the system setting.
 
 ## Layout

@@ -1,9 +1,9 @@
 <script lang="ts">
   import { ClipboardSetText } from '../../wailsjs/runtime/runtime'
-  import { ResetStatStatements, InstallStatStatements } from '../../wailsjs/go/main/App'
+  import { ResetStatStatements, InstallStatStatements, QueryExamples } from '../../wailsjs/go/main/App'
   import type { db } from '../../wailsjs/go/models'
   import { toast, errorMessage, type StatsTab } from '../lib/state.svelte'
-  import { newQueryTab, refreshStats, explainStatement, statementParams } from '../lib/tabs.svelte'
+  import { newQueryTab, refreshStats, explainStatement, statementParams, setSampling, refreshSampling, explainQuery } from '../lib/tabs.svelte'
   import { fmtMs, fmtNum, pct } from '../lib/plan'
 
   interface Props { tab: StatsTab }
@@ -11,6 +11,38 @@
 
   type Key = 'totalMs' | 'calls' | 'meanMs' | 'maxMs' | 'rows' | 'hit' | 'temp' | 'ioReadMs'
   let busy = $state(false)
+  let examples = $state<db.QueryExample[]>([])
+  let examplesFor = $state('')
+
+  // Keep example counts fresh while this tab is visible.
+  $effect(() => {
+    const t = setInterval(() => { if (tab.sampling?.running) void refreshSampling(tab) }, 2000)
+    return () => clearInterval(t)
+  })
+
+  // Load examples for the expanded row, and again when counts change.
+  $effect(() => {
+    const key = tab.expanded
+    const s = key ? (tab.data?.statements ?? []).find(s => rowKey(s) === key) : undefined
+    const count = s ? tab.sampling?.counts?.[s.queryId] ?? 0 : 0
+    if (!s || !count) { examples = []; examplesFor = ''; return }
+    void QueryExamples(tab.connId, s.queryId).then(list => { examples = list; examplesFor = s.queryId })
+  })
+
+  function rowKey(s: db.StatStatement): string {
+    return s.queryId + s.user + s.database + s.topLevel
+  }
+
+  function explainExample(ex: db.QueryExample) {
+    const sql = ex.query.trim()
+    const t = newQueryTab(tab.connId, sql + '\n', `stmt ${ex.queryId.slice(-6)}`)
+    void explainQuery(t, sql, false)
+  }
+
+  function fmtTime(iso: string): string {
+    const d = new Date(iso)
+    return isNaN(d.getTime()) ? iso : d.toLocaleTimeString()
+  }
 
   const columns: { key: Key; label: string; title: string }[] = [
     { key: 'totalMs', label: 'Total time', title: 'Total execution time across all calls' },
@@ -86,6 +118,11 @@
     <input type="text" placeholder="Filter by query text or user" bind:value={tab.filter} />
     <label class="check"><input type="checkbox" checked={tab.currentDBOnly} onchange={toggleScope} /> This database only</label>
     <label class="check" title="Statements run inside functions and procedures"><input type="checkbox" bind:checked={tab.includeNested} /> Include nested</label>
+    <label class="check" title="Poll pg_stat_activity once a second to collect real statement texts, with their constants, for each query id (PostgreSQL 14+)">
+      <input type="checkbox" checked={!!tab.sampling?.running} onchange={(e) => setSampling(tab, (e.currentTarget as HTMLInputElement).checked)} /> Capture examples
+      {#if tab.sampling?.running}<span class="live" title="{tab.sampling.samples} samples taken"></span>{/if}
+    </label>
+    {#if tab.samplingError}<span class="small warn" title={tab.samplingError}>{tab.samplingError}</span>{/if}
     <span class="grow"></span>
     {#if tab.data?.available}
       <span class="muted small">
@@ -126,13 +163,15 @@ CREATE EXTENSION pg_stat_statements;                # in each database to inspec
           </tr>
         </thead>
         <tbody>
-          {#each rows as s (s.queryId + s.user + s.database + s.topLevel)}
+          {#each rows as s (rowKey(s))}
             {@const share = tab.data.totalMs ? s.totalMs / tab.data.totalMs : 0}
             {@const hit = hitRatio(s)}
-            {@const key = s.queryId + s.user + s.database + s.topLevel}
+            {@const key = rowKey(s)}
+            {@const exCount = tab.sampling?.counts?.[s.queryId] ?? 0}
             <tr class:open={tab.expanded === key} onclick={() => (tab.expanded = tab.expanded === key ? null : key)}>
               <td class="q" title={s.query}>
                 {#if !s.topLevel}<span class="nested" title="Nested statement (inside a function)">nested</span>{/if}
+                {#if exCount}<span class="excount" title="{exCount} real example{exCount === 1 ? '' : 's'} captured">{exCount}</span>{/if}
                 <span class="qtext">{oneLine(s.query)}</span>
               </td>
               <td class="n">{fmtMs(s.totalMs)}</td>
@@ -149,6 +188,25 @@ CREATE EXTENSION pg_stat_statements;                # in each database to inspec
               <tr class="detail">
                 <td colspan="10">
                   <pre class="sql">{s.query.trim()}</pre>
+                  {#if examplesFor === s.queryId && examples.length}
+                    <div class="examples">
+                      <div class="exhead">Real executions seen in pg_stat_activity{tab.sampling?.maxQueryLength ? ` (text cut at ${tab.sampling.maxQueryLength} chars)` : ''}</div>
+                      {#each examples as ex (ex.query)}
+                        <div class="example">
+                          <pre class="sql ex">{ex.query.trim()}</pre>
+                          <div class="exmeta">
+                            <span>{ex.count} run{ex.count === 1 ? '' : 's'}, last {fmtTime(ex.lastSeen as any)}</span>
+                            <span class="grow"></span>
+                            <button class="small" onclick={(e) => { e.stopPropagation(); explainExample(ex) }}>Explain</button>
+                            <button class="small" onclick={(e) => { e.stopPropagation(); newQueryTab(tab.connId, ex.query.trim() + '\n', `stmt ${ex.queryId.slice(-6)}`) }}>Open in editor</button>
+                            <button class="small" onclick={(e) => { e.stopPropagation(); void ClipboardSetText(ex.query); toast('Copied') }}>Copy</button>
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  {:else if tab.sampling?.running}
+                    <div class="muted small exnone">No real execution captured yet. Examples appear once the statement runs while capture is on.</div>
+                  {/if}
                   <div class="meta">
                     <span>{s.user}@{s.database}</span>
                     <span>queryid {s.queryId}</span>
@@ -206,4 +264,14 @@ CREATE EXTENSION pg_stat_statements;                # in each database to inspec
   tr.detail td { white-space: normal; background: var(--bg-2) !important; padding: 8px 12px; }
   .sql { margin: 0 0 8px; padding: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; font-family: var(--font-mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow: auto; }
   .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; font-size: 11.5px; color: var(--fg-2); }
+  .live { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); margin-left: 4px; animation: pulse 1.5s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+  .warn { color: var(--warn); max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .excount { font-size: 10px; font-weight: 600; color: var(--ok); background: color-mix(in srgb, var(--ok) 18%, transparent); border-radius: 8px; padding: 0 5px; margin-right: 6px; }
+  .examples { margin: 0 0 8px; }
+  .exhead { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-2); margin: 4px 0 6px; }
+  .example { border-left: 3px solid var(--ok); padding-left: 8px; margin-bottom: 8px; }
+  .sql.ex { margin: 0 0 4px; max-height: 160px; }
+  .exmeta { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: var(--fg-2); }
+  .exnone { margin-bottom: 8px; }
 </style>

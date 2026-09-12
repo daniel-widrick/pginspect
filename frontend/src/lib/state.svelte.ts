@@ -44,6 +44,8 @@ export interface StatsTab {
   sortDesc: boolean
   includeNested: boolean
   expanded: string | null
+  sampling: db.SamplingStatus | null
+  samplingError: string
 }
 
 export type Tab = QueryTab | StructureTab | StatsTab

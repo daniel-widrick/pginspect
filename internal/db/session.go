@@ -64,6 +64,7 @@ type Session struct {
 	mu        sync.Mutex
 	running   map[string]context.CancelFunc
 	typeNames map[uint32]string
+	sampler   *sampler
 }
 
 // DSN builds a connection string for the profile.
@@ -120,7 +121,11 @@ func (s *Session) Close() {
 		cancel()
 	}
 	s.running = map[string]context.CancelFunc{}
+	sm := s.sampler
 	s.mu.Unlock()
+	if sm != nil {
+		s.StopSampling()
+	}
 	s.pool.Close()
 }
 

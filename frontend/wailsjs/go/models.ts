@@ -141,6 +141,50 @@ export namespace db {
 	        this.user = source["user"];
 	    }
 	}
+	export class QueryExample {
+	    queryId: string;
+	    query: string;
+	    user: string;
+	    database: string;
+	    // Go type: time
+	    firstSeen: any;
+	    // Go type: time
+	    lastSeen: any;
+	    count: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new QueryExample(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.queryId = source["queryId"];
+	        this.query = source["query"];
+	        this.user = source["user"];
+	        this.database = source["database"];
+	        this.firstSeen = this.convertValues(source["firstSeen"], null);
+	        this.lastSeen = this.convertValues(source["lastSeen"], null);
+	        this.count = source["count"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class Result {
 	    columns: Column[];
 	    rows: string[][];
@@ -296,6 +340,28 @@ export namespace db {
 	        this.returns = source["returns"];
 	        this.kind = source["kind"];
 	        this.oid = source["oid"];
+	    }
+	}
+	export class SamplingStatus {
+	    supported: boolean;
+	    running: boolean;
+	    message: string;
+	    samples: number;
+	    maxQueryLength: number;
+	    counts: Record<string, number>;
+	
+	    static createFrom(source: any = {}) {
+	        return new SamplingStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.supported = source["supported"];
+	        this.running = source["running"];
+	        this.message = source["message"];
+	        this.samples = source["samples"];
+	        this.maxQueryLength = source["maxQueryLength"];
+	        this.counts = source["counts"];
 	    }
 	}
 	export class Schema {

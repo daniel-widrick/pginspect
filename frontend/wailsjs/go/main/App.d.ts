@@ -3,6 +3,8 @@
 import {db} from '../models';
 import {config} from '../models';
 
+export function ActivitySampling(arg1:string):Promise<db.SamplingStatus>;
+
 export function CancelQuery(arg1:string,arg2:string):Promise<boolean>;
 
 export function ConfigDir():Promise<string>;
@@ -33,6 +35,8 @@ export function ListRelations(arg1:string,arg2:string):Promise<Array<db.Relation
 
 export function ListSchemas(arg1:string):Promise<Array<db.Schema>>;
 
+export function QueryExamples(arg1:string,arg2:string):Promise<Array<db.QueryExample>>;
+
 export function RelationInfo(arg1:string,arg2:string,arg3:string):Promise<db.RelationInfo>;
 
 export function ResetStatStatements(arg1:string):Promise<void>;
@@ -41,6 +45,10 @@ export function RunQuery(arg1:string,arg2:string,arg3:string,arg4:number):Promis
 
 export function SaveProfile(arg1:config.Profile,arg2:string):Promise<config.Profile>;
 
+export function StartActivitySampling(arg1:string):Promise<void>;
+
 export function StatStatements(arg1:string,arg2:boolean,arg3:number):Promise<db.StatsResponse>;
+
+export function StopActivitySampling(arg1:string):Promise<void>;
 
 export function TestConnection(arg1:config.Profile,arg2:string):Promise<string>;
