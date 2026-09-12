@@ -125,8 +125,8 @@
     {#if tab.samplingError}<span class="small warn" title={tab.samplingError}>{tab.samplingError}</span>{/if}
     <span class="grow"></span>
     {#if tab.data?.available}
-      <span class="muted small">
-        {fmtNum(tab.data.totalCalls)} calls, {fmtMs(tab.data.totalMs)} total{tab.data.statsReset ? `, since ${tab.data.statsReset.replace(/\.\d+/, '')}` : ''}
+      <span class="muted small summary" title={tab.data.statsReset ? `Counters since ${tab.data.statsReset}` : ''}>
+        {fmtNum(tab.data.totalCalls)} calls, {fmtMs(tab.data.totalMs)} total{tab.data.statsReset ? `, since ${fmtTime(tab.data.statsReset)}` : ''}
       </span>
       <button class="small" onclick={() => refreshStats(tab)} disabled={tab.loading}>↻ Refresh</button>
       <button class="small danger" onclick={reset} disabled={busy}>Reset</button>
@@ -235,7 +235,8 @@ CREATE EXTENSION pg_stat_statements;                # in each database to inspec
 
 <style>
   .stats { height: 100%; display: flex; flex-direction: column; min-height: 0; }
-  .toolbar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--bg-2); flex-shrink: 0; }
+  .toolbar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--bg-2); flex-shrink: 0; white-space: nowrap; }
+  .toolbar .summary { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
   .toolbar input[type="text"] { width: 280px; padding: 3px 8px; font-size: 12px; }
   .check { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--fg-2); white-space: nowrap; }
   .grow { flex: 1; }
