@@ -74,6 +74,10 @@ export function RelationInfo(arg1, arg2, arg3) {
   return window['go']['main']['App']['RelationInfo'](arg1, arg2, arg3);
 }
 
+export function RenderDiagram(arg1, arg2) {
+  return window['go']['main']['App']['RenderDiagram'](arg1, arg2);
+}
+
 export function ResetStatStatements(arg1) {
   return window['go']['main']['App']['ResetStatStatements'](arg1);
 }

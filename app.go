@@ -10,6 +10,12 @@ import (
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
+	"github.com/daniel-widrick/diagram"
+	"github.com/daniel-widrick/diagram/layout/tree"
+	"github.com/daniel-widrick/diagram/render/svg"
+	"github.com/daniel-widrick/diagram/spec"
+	"github.com/daniel-widrick/diagram/text"
+
 	"pginspect/internal/config"
 	"pginspect/internal/db"
 )
@@ -391,6 +397,40 @@ func (a *App) ExportCSV(columns []string, rows [][]*string, suggestedName string
 func (a *App) Version() string {
 	return version
 }
+
+// ---- diagrams -------------------------------------------------------------
+
+// RenderDiagram lays out a graph with the diagram library and returns an
+// inline SVG that uses the app's CSS variables for colour. The frontend
+// builds the graph (for example from a parsed EXPLAIN plan) and injects the
+// result. Labels are measured with Go Mono, which the frontend also loads,
+// so text fits its boxes exactly.
+func (a *App) RenderDiagram(graph spec.Graph, title string) (string, error) {
+	g, err := graph.Graph()
+	if err != nil {
+		return "", err
+	}
+	opts := diagram.Options{Measurer: diagramFonts, Styles: text.DefaultStyles()}
+	l, err := tree.Layout(g, opts)
+	if err != nil {
+		return "", err
+	}
+	th := svg.Tokens()
+	th.Background = "transparent"
+	th.Node = svg.KindStyle{Fill: "var(--bg-2)", Stroke: "var(--border)", Text: "var(--fg)", TextMuted: "var(--fg-2)"}
+	th.Edge = "var(--fg-2)"
+	th.EdgeLabel = "var(--fg-2)"
+	th.BarTrack = "var(--bg-3)"
+	th.BarFill = "var(--accent)"
+	th.Kinds["hot"] = svg.KindStyle{Fill: "var(--danger)", Stroke: "var(--danger)", Text: "#ffffff", TextMuted: "rgba(255,255,255,0.85)"}
+	th.Kinds["warm"] = svg.KindStyle{Fill: "color-mix(in srgb, var(--warn) 25%, var(--bg-2))", Stroke: "var(--warn)"}
+	th.Kinds["weak"] = svg.KindStyle{Stroke: "var(--danger)", StrokeDash: "6 4"}
+	th.FontMono = `"Go Mono", ui-monospace, Menlo, monospace`
+	return svg.Render(l, svg.Options{Theme: th, Styles: opts.Styles, Title: title, Inline: true}), nil
+}
+
+// diagramFonts is shared: parsing the embedded fonts once is enough.
+var diagramFonts = text.NewGoFonts()
 
 // ConfigDir tells the UI where profiles are stored.
 func (a *App) ConfigDir() string {

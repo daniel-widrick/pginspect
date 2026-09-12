@@ -2,11 +2,12 @@
   import { ClipboardSetText } from '../../wailsjs/runtime/runtime'
   import { toast, type QueryTab } from '../lib/state.svelte'
   import { parsePlan, fmtMs, fmtNum, pct, detailEntries, type PlanNode, type ParsedPlan } from '../lib/plan'
+  import PlanDiagram from './PlanDiagram.svelte'
 
   interface Props { tab: QueryTab }
   let { tab }: Props = $props()
 
-  let showJson = $state(false)
+  let mode = $state<'diagram' | 'tree' | 'json'>('diagram')
   let expanded = $state<Record<number, boolean>>({})
   let collapsed = $state<Record<number, boolean>>({})
 
@@ -15,7 +16,7 @@
     try { return { plan: parsePlan(tab.plan.plan) } } catch (e) { return { error: String(e) } }
   })
 
-  $effect(() => { tab.plan; expanded = {}; collapsed = {}; showJson = false })
+  $effect(() => { tab.plan; expanded = {}; collapsed = {} })
 
   /** Nodes in display order, skipping children of collapsed nodes. */
   const visible = $derived.by(() => {
@@ -72,8 +73,9 @@
         {#if p.planningTime !== null}<span class="muted">{fmtMs(p.planningTime)} planning</span>{/if}
       {/if}
       <span class="grow"></span>
-      <button class="small" class:active={!showJson} onclick={() => (showJson = false)}>Tree</button>
-      <button class="small" class:active={showJson} onclick={() => (showJson = true)}>JSON</button>
+      <button class="small" class:active={mode === 'diagram'} onclick={() => (mode = 'diagram')}>Diagram</button>
+      <button class="small" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>Table</button>
+      <button class="small" class:active={mode === 'json'} onclick={() => (mode = 'json')}>JSON</button>
       <button class="small" onclick={copyJson}>Copy JSON</button>
     </div>
 
@@ -85,8 +87,10 @@
       </ul>
     {/if}
 
-    {#if showJson}
+    {#if mode === 'json'}
       <pre class="json">{JSON.stringify(JSON.parse(tab.plan.plan), null, 2)}</pre>
+    {:else if mode === 'diagram'}
+      <div class="diagram-pane"><PlanDiagram plan={p} title={tab.plan.analyze ? 'Executed plan' : 'Estimated plan'} /></div>
     {:else}
       <div class="tree">
         <div class="row head">
@@ -141,7 +145,9 @@
 </div>
 
 <style>
-  .plan { height: 100%; overflow: auto; background: var(--bg); font-size: 12.5px; }
+  .plan { height: 100%; overflow: auto; background: var(--bg); font-size: 12.5px; display: flex; flex-direction: column; }
+  .plan > :global(*) { flex-shrink: 0; }
+  .diagram-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .pad { padding: 16px; display: flex; gap: 8px; align-items: center; }
   .error-box { padding: 10px 14px; background: color-mix(in srgb, var(--danger) 8%, var(--bg)); }
   .summary { display: flex; align-items: center; gap: 14px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg-2); position: sticky; top: 0; z-index: 2; }

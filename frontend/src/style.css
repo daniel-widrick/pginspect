@@ -5,6 +5,21 @@
   src: local(""), url("assets/fonts/nunito-v16-latin-regular.woff2") format("woff2");
 }
 
+/* Go Mono is the font the diagram library measures with; loading the same
+   face here keeps rendered labels exactly as wide as the layout assumed. */
+@font-face {
+  font-family: "Go Mono";
+  font-style: normal;
+  font-weight: 400;
+  src: url("assets/fonts/Go-Mono.ttf") format("truetype");
+}
+@font-face {
+  font-family: "Go Mono";
+  font-style: normal;
+  font-weight: 700;
+  src: url("assets/fonts/Go-Mono-Bold.ttf") format("truetype");
+}
+
 :root {
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;

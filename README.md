@@ -30,9 +30,13 @@ Features so far:
 - Results grid: one tab per statement, sortable columns, NULL rendering,
   row limit, cancel, copy cell/row, CSV export.
 - Explain plan viewer: Cmd/Ctrl+E shows the estimated plan, Cmd/Ctrl+Shift+E
-  runs EXPLAIN ANALYZE with buffers. The tree shows per-node self time or
-  cost, actual versus estimated rows, and flags misestimates, filters that
-  discard most rows, sorts that spill to disk, and hash joins that batch.
+  runs EXPLAIN ANALYZE with buffers. The plan is drawn as a tree diagram
+  (laid out by [diagram](https://github.com/daniel-widrick/diagram), which
+  measures every label before placing boxes so text never overruns), with
+  the hottest node in red, edge width following row counts, and a click on
+  any node for its full details. A table view shows per-node self time or
+  cost and actual versus estimated rows, and both flag misestimates, filters
+  that discard most rows, sorts that spill to disk, and hash joins that batch.
   ANALYZE runs inside a transaction that is always rolled back, so it is safe
   on UPDATE and DELETE.
 - Query statistics: a pg_stat_statements browser (the sigma button on a
