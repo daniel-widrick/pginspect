@@ -44,6 +44,7 @@ func main() {
 	query.AddText("Export Results as CSV...", keys.Combo("s", keys.CmdOrCtrlKey, keys.ShiftKey), emit("export"))
 	tools := appMenu.AddSubmenu("Tools")
 	tools.AddText("Query Statistics", keys.Combo("p", keys.CmdOrCtrlKey, keys.ShiftKey), emit("stats"))
+	tools.AddText("Slow Statement Log", keys.Combo("l", keys.CmdOrCtrlKey, keys.ShiftKey), emit("slowlog"))
 	appMenu.Append(menu.WindowMenu())
 
 	err := wails.Run(&options.App{

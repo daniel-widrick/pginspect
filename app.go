@@ -399,6 +399,30 @@ func (a *App) Version() string {
 	return version
 }
 
+// ---- slow log -------------------------------------------------------------
+
+// SlowLogStatus reports whether the server's statement log can be read.
+func (a *App) SlowLogStatus(connID string) (db.SlowLogStatus, error) {
+	s, err := a.conns.Get(connID)
+	if err != nil {
+		return db.SlowLogStatus{}, err
+	}
+	ctx, cancel := a.catalogCtx()
+	defer cancel()
+	return s.SlowLogStatus(ctx), nil
+}
+
+// SlowLog reads logged statement executions, newest first.
+func (a *App) SlowLog(connID string, limit int, maxBytes int64) (db.SlowLogResult, error) {
+	s, err := a.conns.Get(connID)
+	if err != nil {
+		return db.SlowLogResult{}, err
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 60*time.Second)
+	defer cancel()
+	return s.SlowLog(ctx, limit, maxBytes)
+}
+
 // ---- diagrams -------------------------------------------------------------
 
 // RenderDiagram lays out a graph with the diagram library and returns an

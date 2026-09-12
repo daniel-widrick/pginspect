@@ -90,6 +90,14 @@ export function SaveProfile(arg1, arg2) {
   return window['go']['main']['App']['SaveProfile'](arg1, arg2);
 }
 
+export function SlowLog(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SlowLog'](arg1, arg2, arg3);
+}
+
+export function SlowLogStatus(arg1) {
+  return window['go']['main']['App']['SlowLogStatus'](arg1);
+}
+
 export function StartActivitySampling(arg1) {
   return window['go']['main']['App']['StartActivitySampling'](arg1);
 }

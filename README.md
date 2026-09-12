@@ -68,6 +68,17 @@ Features so far:
   captures go through the parameter dialog; and text is cut at
   track_activity_query_size (default 1 kB), in which case Explain uses the
   complete normalised statement instead.
+- Slow statement log: the stopwatch button on a connection (or Tools > Slow
+  Statement Log) reads the server's log files through pg_ls_logdir and
+  pg_read_file and lists every logged execution with its duration and, for
+  statements a client bound over the extended protocol, the actual parameter
+  values. That is the only place PostgreSQL records them. Explain and Explain
+  Analyze run the statement with those values in place, so the plan is the
+  one production ran. Reads jsonlog, csvlog and plain text; needs
+  logging_collector on, a log_min_duration_statement threshold, and a role
+  that may read the log directory (pg_monitor, or grants on the two
+  functions). jsonlog or csvlog also carries the query id that links an
+  execution to its statistics row.
 - Light and dark themes following the system setting.
 
 ## Layout

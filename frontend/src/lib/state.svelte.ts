@@ -48,7 +48,21 @@ export interface StatsTab {
   samplingError: string
 }
 
-export type Tab = QueryTab | StructureTab | StatsTab
+export interface SlowLogTab {
+  kind: 'slowlog'
+  id: string
+  title: string
+  connId: string
+  data: db.SlowLogResult | null
+  error: string
+  loading: boolean
+  filter: string
+  minMs: number
+  maxBytes: number
+  expanded: number | null
+}
+
+export type Tab = QueryTab | StructureTab | StatsTab | SlowLogTab
 
 export type Dialog =
   | { kind: 'profile'; profile: config.Profile | null }

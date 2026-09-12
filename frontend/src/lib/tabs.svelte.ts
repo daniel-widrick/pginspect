@@ -1,6 +1,6 @@
 // Tab lifecycle and query execution.
-import { RunQuery, CancelQuery, RelationInfo, Explain, StatStatements, StartActivitySampling, StopActivitySampling, ActivitySampling } from '../../wailsjs/go/main/App'
-import { store, activeTab, errorMessage, toast, type QueryTab, type StructureTab, type StatsTab, type Tab } from './state.svelte'
+import { RunQuery, CancelQuery, RelationInfo, Explain, StatStatements, StartActivitySampling, StopActivitySampling, ActivitySampling, SlowLog } from '../../wailsjs/go/main/App'
+import { store, activeTab, errorMessage, toast, type QueryTab, type StructureTab, type StatsTab, type SlowLogTab, type Tab } from './state.svelte'
 
 let counter = 0
 const nextId = () => `${Date.now().toString(36)}-${++counter}`
@@ -74,6 +74,35 @@ export async function openStatsTab(connId: string): Promise<void> {
   store.activeTabId = tab.id
   const live = store.tabs[store.tabs.length - 1] as StatsTab
   await Promise.all([refreshStats(live), setSampling(live, true)])
+}
+
+/** Opens (or focuses) the slow statement log for a connection. */
+export async function openSlowLogTab(connId: string): Promise<void> {
+  const existing = store.tabs.find(t => t.kind === 'slowlog' && t.connId === connId) as SlowLogTab | undefined
+  if (existing) {
+    store.activeTabId = existing.id
+    return
+  }
+  const tab: SlowLogTab = {
+    kind: 'slowlog', id: nextId(), title: 'Slow log', connId,
+    data: null, error: '', loading: false, filter: '', minMs: 0, maxBytes: 8 * 1024 * 1024, expanded: null,
+  }
+  store.tabs.push(tab)
+  store.activeTabId = tab.id
+  await refreshSlowLog(store.tabs[store.tabs.length - 1] as SlowLogTab)
+}
+
+export async function refreshSlowLog(tab: SlowLogTab): Promise<void> {
+  if (tab.loading) return
+  tab.loading = true
+  tab.error = ''
+  try {
+    tab.data = await SlowLog(tab.connId, 500, tab.maxBytes)
+  } catch (e) {
+    tab.error = errorMessage(e)
+  } finally {
+    tab.loading = false
+  }
 }
 
 /** Starts or stops capturing real statement texts from pg_stat_activity. */

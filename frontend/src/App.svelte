@@ -4,13 +4,14 @@
   import { Version } from '../wailsjs/go/main/App'
   import { store, activeTab, profileName } from './lib/state.svelte'
   import { loadProfiles, blankProfile } from './lib/connections.svelte'
-  import { newQueryTab, closeTab, runActive, runQuery, cancelActive, isQueryTab, explainActive, openStatsTab } from './lib/tabs.svelte'
+  import { newQueryTab, closeTab, runActive, runQuery, cancelActive, isQueryTab, explainActive, openStatsTab, openSlowLogTab } from './lib/tabs.svelte'
   import Sidebar from './components/Sidebar.svelte'
   import Editor from './components/Editor.svelte'
   import ResultsGrid from './components/ResultsGrid.svelte'
   import PlanView from './components/PlanView.svelte'
   import StructureView from './components/StructureView.svelte'
   import StatsView from './components/StatsView.svelte'
+  import SlowLogView from './components/SlowLogView.svelte'
   import ProfileDialog from './components/ProfileDialog.svelte'
   import PasswordDialog from './components/PasswordDialog.svelte'
   import ParamsDialog from './components/ParamsDialog.svelte'
@@ -57,6 +58,7 @@
       EventsOn('menu:explainanalyze', () => void explainActive(true)),
       EventsOn('menu:export', () => grid?.exportCsv()),
       EventsOn('menu:stats', () => { const c = tab?.connId ?? Object.keys(store.connected)[0]; if (c) void openStatsTab(c) }),
+      EventsOn('menu:slowlog', () => { const c = tab?.connId ?? Object.keys(store.connected)[0]; if (c) void openSlowLogTab(c) }),
     ]
     return () => offs.forEach(off => off())
   })
@@ -81,7 +83,7 @@
         <div class="tab" class:active={t.id === store.activeTabId} onclick={() => (store.activeTabId = t.id)} role="tab" tabindex="-1"
              onauxclick={(e) => { if (e.button === 1) closeTab(t.id) }}>
           <span class="tab-conn" style="background: {store.profiles.find(p => p.id === t.connId)?.color || 'var(--fg-3)'}" title={profileName(t.connId)}></span>
-          <span class="tab-title">{t.kind === 'structure' ? '≡ ' : t.kind === 'stats' ? '∑ ' : ''}{t.title}</span>
+          <span class="tab-title">{t.kind === 'structure' ? '≡ ' : t.kind === 'stats' ? '∑ ' : t.kind === 'slowlog' ? '⏱ ' : ''}{t.title}</span>
           {#if t.kind === 'query' && t.running}<span class="tab-running"></span>{/if}
           <button class="tab-close" onclick={(e) => { e.stopPropagation(); closeTab(t.id) }} title="Close">×</button>
         </div>
@@ -131,6 +133,8 @@
       <div class="results-pane"><StructureView {tab} /></div>
     {:else if tab?.kind === 'stats'}
       <div class="results-pane"><StatsView {tab} /></div>
+    {:else if tab?.kind === 'slowlog'}
+      <div class="results-pane"><SlowLogView {tab} /></div>
     {:else}
       <div class="welcome">
         <h1>pginspect <span class="version">{version}</span></h1>
@@ -157,6 +161,8 @@
         <span class="muted">{queryTab.plan.analyze ? 'explain analyze' : 'explain'} {fmtDuration(queryTab.plan.durationMs)}</span>
       {:else if tab?.kind === 'stats' && tab.data?.available}
         <span class="muted">{tab.data.statements.length} statements shown</span>
+      {:else if tab?.kind === 'slowlog' && tab.data}
+        <span class="muted">{tab.data.entries.length} logged executions{tab.data.complete ? '' : ' (more in older files)'}</span>
       {:else if queryTab?.response}
         {@const r = queryTab.response.results[queryTab.activeResult]}
         {#if r?.columns?.length}

@@ -48,6 +48,10 @@ export function RunQuery(arg1:string,arg2:string,arg3:string,arg4:number):Promis
 
 export function SaveProfile(arg1:config.Profile,arg2:string):Promise<config.Profile>;
 
+export function SlowLog(arg1:string,arg2:number,arg3:number):Promise<db.SlowLogResult>;
+
+export function SlowLogStatus(arg1:string):Promise<db.SlowLogStatus>;
+
 export function StartActivitySampling(arg1:string):Promise<void>;
 
 export function StatStatements(arg1:string,arg2:boolean,arg3:number):Promise<db.StatsResponse>;

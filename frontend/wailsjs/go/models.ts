@@ -378,6 +378,126 @@ export namespace db {
 	        this.comment = source["comment"];
 	    }
 	}
+	export class SlowLogEntry {
+	    // Go type: time
+	    time: any;
+	    user: string;
+	    database: string;
+	    pid: number;
+	    durationMs: number;
+	    command: string;
+	    query: string;
+	    params?: Record<string, string>;
+	    queryId: string;
+	    app: string;
+	    file: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SlowLogEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.time = this.convertValues(source["time"], null);
+	        this.user = source["user"];
+	        this.database = source["database"];
+	        this.pid = source["pid"];
+	        this.durationMs = source["durationMs"];
+	        this.command = source["command"];
+	        this.query = source["query"];
+	        this.params = source["params"];
+	        this.queryId = source["queryId"];
+	        this.app = source["app"];
+	        this.file = source["file"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class SlowLogStatus {
+	    readable: boolean;
+	    logging: boolean;
+	    message: string;
+	    loggingCollector: string;
+	    logDestination: string;
+	    logMinDurationStatement: string;
+	    logDirectory: string;
+	    logLinePrefix: string;
+	    logParameterMaxLength: string;
+	    format: string;
+	    files: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SlowLogStatus(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.readable = source["readable"];
+	        this.logging = source["logging"];
+	        this.message = source["message"];
+	        this.loggingCollector = source["loggingCollector"];
+	        this.logDestination = source["logDestination"];
+	        this.logMinDurationStatement = source["logMinDurationStatement"];
+	        this.logDirectory = source["logDirectory"];
+	        this.logLinePrefix = source["logLinePrefix"];
+	        this.logParameterMaxLength = source["logParameterMaxLength"];
+	        this.format = source["format"];
+	        this.files = source["files"];
+	    }
+	}
+	export class SlowLogResult {
+	    entries: SlowLogEntry[];
+	    bytesRead: number;
+	    complete: boolean;
+	    status: SlowLogStatus;
+	
+	    static createFrom(source: any = {}) {
+	        return new SlowLogResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.entries = this.convertValues(source["entries"], SlowLogEntry);
+	        this.bytesRead = source["bytesRead"];
+	        this.complete = source["complete"];
+	        this.status = this.convertValues(source["status"], SlowLogStatus);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
 	export class StatStatement {
 	    queryId: string;
 	    query: string;
