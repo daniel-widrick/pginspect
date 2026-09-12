@@ -3,11 +3,12 @@
   import { toast, type QueryTab } from '../lib/state.svelte'
   import { parsePlan, fmtMs, fmtNum, pct, detailEntries, type PlanNode, type ParsedPlan } from '../lib/plan'
   import PlanDiagram from './PlanDiagram.svelte'
+  import JoinDiagram from './JoinDiagram.svelte'
 
   interface Props { tab: QueryTab }
   let { tab }: Props = $props()
 
-  let mode = $state<'diagram' | 'tree' | 'json'>('diagram')
+  let mode = $state<'diagram' | 'joins' | 'tree' | 'json'>('diagram')
   let expanded = $state<Record<number, boolean>>({})
   let collapsed = $state<Record<number, boolean>>({})
 
@@ -74,6 +75,7 @@
       {/if}
       <span class="grow"></span>
       <button class="small" class:active={mode === 'diagram'} onclick={() => (mode = 'diagram')}>Diagram</button>
+      <button class="small" class:active={mode === 'joins'} onclick={() => (mode = 'joins')} title="Tables and join conditions">Joins</button>
       <button class="small" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>Table</button>
       <button class="small" class:active={mode === 'json'} onclick={() => (mode = 'json')}>JSON</button>
       <button class="small" onclick={copyJson}>Copy JSON</button>
@@ -91,6 +93,8 @@
       <pre class="json">{JSON.stringify(JSON.parse(tab.plan.plan), null, 2)}</pre>
     {:else if mode === 'diagram'}
       <div class="diagram-pane"><PlanDiagram plan={p} title={tab.plan.analyze ? 'Executed plan' : 'Estimated plan'} /></div>
+    {:else if mode === 'joins'}
+      <div class="diagram-pane"><JoinDiagram plan={p} /></div>
     {:else}
       <div class="tree">
         <div class="row head">

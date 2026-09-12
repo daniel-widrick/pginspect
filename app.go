@@ -11,6 +11,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/daniel-widrick/diagram"
+	"github.com/daniel-widrick/diagram/layout/layered"
 	"github.com/daniel-widrick/diagram/layout/tree"
 	"github.com/daniel-widrick/diagram/render/svg"
 	"github.com/daniel-widrick/diagram/spec"
@@ -401,17 +402,25 @@ func (a *App) Version() string {
 // ---- diagrams -------------------------------------------------------------
 
 // RenderDiagram lays out a graph with the diagram library and returns an
-// inline SVG that uses the app's CSS variables for colour. The frontend
-// builds the graph (for example from a parsed EXPLAIN plan) and injects the
-// result. Labels are measured with Go Mono, which the frontend also loads,
-// so text fits its boxes exactly.
-func (a *App) RenderDiagram(graph spec.Graph, title string) (string, error) {
+// inline SVG that uses the app's CSS variables for colour. layout is
+// "tree" or "layered". The frontend builds the graph (for example from a
+// parsed EXPLAIN plan) and injects the result. Labels are measured with Go
+// Mono, which the frontend also loads, so text fits its boxes exactly.
+func (a *App) RenderDiagram(graph spec.Graph, layout string, title string) (string, error) {
 	g, err := graph.Graph()
 	if err != nil {
 		return "", err
 	}
 	opts := diagram.Options{Measurer: diagramFonts, Styles: text.DefaultStyles()}
-	l, err := tree.Layout(g, opts)
+	var l *diagram.Layout
+	switch layout {
+	case "", "tree":
+		l, err = tree.Layout(g, opts)
+	case "layered":
+		l, err = layered.Layout(g, opts)
+	default:
+		err = fmt.Errorf("unknown layout %q", layout)
+	}
 	if err != nil {
 		return "", err
 	}

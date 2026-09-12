@@ -12,6 +12,7 @@
   let svg = $state('')
   let error = $state('')
   let zoom = $state(1)
+  let direction = $state<'topdown' | 'leftright'>('topdown')
   let selected = $state<PlanNode | null>(null)
   let host = $state<HTMLDivElement>()
 
@@ -58,13 +59,13 @@
       n.children.forEach(c => walk(c, n))
     }
     walk(plan.root, null)
-    return { direction: 'topdown', nodes, edges, rankSep: 34, nodeSep: 20 }
+    return { direction, nodes, edges, rankSep: direction === 'leftright' ? 40 : 34, nodeSep: 20 }
   }
 
   $effect(() => {
     const spec = buildSpec()
     selected = null
-    RenderDiagram(spec as any, title).then(s => { svg = s; error = '' }).catch(e => { error = errorMessage(e) })
+    RenderDiagram(spec as any, 'tree', title).then(s => { svg = s; error = '' }).catch(e => { error = errorMessage(e) })
   })
 
   function onClick(e: MouseEvent) {
@@ -96,6 +97,9 @@
     <button class="small" onclick={() => (zoom = Math.max(0.2, zoom / 1.25))} title="Zoom out">−</button>
     <button class="small" onclick={() => (zoom = 1)} title="Actual size">1:1</button>
     <button class="small" onclick={fit} title="Fit width">Fit</button>
+    <span class="sep"></span>
+    <button class="small" class:active={direction === 'topdown'} onclick={() => (direction = 'topdown')} title="Root at the top">↓</button>
+    <button class="small" class:active={direction === 'leftright'} onclick={() => (direction = 'leftright')} title="Root at the left">→</button>
     <span class="muted small">{Math.round(zoom * 100)}% · click a node for details</span>
   </div>
   <div class="scroll">
@@ -132,6 +136,8 @@
   .diagram { display: flex; flex-direction: column; height: 100%; min-height: 0; }
   .tools { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg-2); flex-shrink: 0; }
   .small { font-size: 11.5px; }
+  .sep { width: 1px; height: 14px; background: var(--border); margin: 0 4px; }
+  button.active { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
   .scroll { flex: 1; overflow: auto; min-height: 0; padding: 12px; }
   .pad { padding: 8px; }
   .canvas { transform-origin: top left; display: inline-block; font-family: "Go Mono", ui-monospace, Menlo, monospace; }

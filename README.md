@@ -37,6 +37,11 @@ Features so far:
   any node for its full details. A table view shows per-node self time or
   cost and actual versus estimated rows, and both flag misestimates, filters
   that discard most rows, sorts that spill to disk, and hash joins that batch.
+  Diagrams can flow top-down or left-to-right.
+- Joins view: the tables a plan touched, how each was reached (scan type and
+  index), rows and time, and the join conditions between them as a layered
+  graph. Joins the planner folded to a constant on both sides are inferred
+  and labelled; joins into a costly sequential scan are dashed.
   ANALYZE runs inside a transaction that is always rolled back, so it is safe
   on UPDATE and DELETE.
 - Query statistics: a pg_stat_statements browser (the sigma button on a

@@ -40,7 +40,7 @@ export function QueryExamples(arg1:string,arg2:string):Promise<Array<db.QueryExa
 
 export function RelationInfo(arg1:string,arg2:string,arg3:string):Promise<db.RelationInfo>;
 
-export function RenderDiagram(arg1:spec.Graph,arg2:string):Promise<string>;
+export function RenderDiagram(arg1:spec.Graph,arg2:string,arg3:string):Promise<string>;
 
 export function ResetStatStatements(arg1:string):Promise<void>;
 
