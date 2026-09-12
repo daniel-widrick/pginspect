@@ -1,0 +1,97 @@
+name: Release builds
+
+# Builds pginspect for each platform when a GitHub release is published and
+# attaches the binaries to it. Can also be run by hand to produce workflow
+# artifacts without a release.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  WAILS_VERSION: v2.15.0
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS universal
+            os: macos-latest
+            platform: darwin/universal
+            artifact: pginspect-darwin-universal.zip
+          - name: Windows amd64
+            os: windows-latest
+            platform: windows/amd64
+            artifact: pginspect-windows-amd64.exe
+          - name: Linux amd64
+            os: ubuntu-latest
+            platform: linux/amd64
+            artifact: pginspect-linux-amd64.tar.gz
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install Wails
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "version=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build
+        shell: bash
+        run: |
+          extra=""
+          if [ "${{ runner.os }}" = "Linux" ]; then extra="-tags webkit2_41"; fi
+          wails build -clean -platform ${{ matrix.platform }} $extra \
+            -ldflags "-X main.version=${{ steps.ver.outputs.version }}"
+
+      - name: Package
+        shell: bash
+        run: |
+          mkdir -p dist
+          case "${{ runner.os }}" in
+            macOS)
+              ditto -c -k --keepParent build/bin/pginspect.app "dist/${{ matrix.artifact }}" ;;
+            Windows)
+              cp build/bin/pginspect.exe "dist/${{ matrix.artifact }}" ;;
+            Linux)
+              tar -C build/bin -czf "dist/${{ matrix.artifact }}" pginspect ;;
+          esac
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "dist/${{ matrix.artifact }}" --clobber

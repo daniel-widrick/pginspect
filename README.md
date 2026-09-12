@@ -1,7 +1,22 @@
 # pginspect
 
+[![CI](https://github.com/daniel-widrick/pginspect/actions/workflows/ci.yml/badge.svg)](https://github.com/daniel-widrick/pginspect/actions/workflows/ci.yml)
+
 A cross-platform desktop GUI for PostgreSQL, written in Go with a Svelte
 frontend, built on [Wails v2](https://wails.io).
+
+## Install
+
+Download the build for your platform from the
+[releases page](https://github.com/daniel-widrick/pginspect/releases):
+
+- macOS: `pginspect-darwin-universal.zip` (Apple Silicon and Intel). The app
+  is not signed or notarised yet, so the first launch needs
+  `xattr -d com.apple.quarantine pginspect.app` or a right-click > Open.
+- Windows: `pginspect-windows-amd64.exe`, a single portable executable.
+  Needs the WebView2 runtime, which Windows 10/11 already include.
+- Linux: `pginspect-linux-amd64.tar.gz`. Needs `libwebkit2gtk-4.1` and GTK 3
+  (Ubuntu 22.04+, Fedora 37+, or equivalent).
 
 Features so far:
 
@@ -67,6 +82,8 @@ wails build             # production binary in build/bin
 go test ./...           # db tests need the container below, otherwise they skip
 ```
 
+On Ubuntu 24.04 add `-tags webkit2_41` to `wails build` and `wails dev`.
+
 A throwaway database for local testing, with sample data whose plans are
 worth looking at (300k orders, 750k order lines, 1M events, skewed keys,
 some deliberately missing indexes):
@@ -75,9 +92,12 @@ some deliberately missing indexes):
 docker run -d --name pginspect-pg -e POSTGRES_PASSWORD=postgres \
   -e POSTGRES_DB=inspect -p 5433:5432 postgres:17 \
   -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track=all
+docker exec -i pginspect-pg psql -q -U postgres -d inspect < testdata/test-schema.sql
 docker exec -i pginspect-pg psql -q -U postgres -d inspect < testdata/seed.sql
-docker exec pginspect-pg psql -U postgres -d inspect -c 'create extension pg_stat_statements'
 ```
+
+`test-schema.sql` is the small fixture the Go tests use; `seed.sql` adds the
+larger dataset.
 
 `testdata/explain-examples.sql` has queries to try with the plan viewer.
 
@@ -93,6 +113,15 @@ a mode 0600 `secrets.json` next to the profiles instead. Profiles live in:
 - Windows: `%AppData%\pginspect\`
 
 `PGPASSWORD` is also honoured when no password is stored.
+
+## Releasing
+
+CI runs tests, the frontend check and a Linux build on every push. Publishing
+a GitHub release (any tag, for example `v0.1.0`) triggers the release
+workflow, which builds the macOS universal app, the Windows executable and
+the Linux binary, stamps them with the tag, and attaches them to the release.
+The same workflow can be run by hand from the Actions tab to get the builds
+as workflow artifacts without publishing anything.
 
 ## Roadmap
 

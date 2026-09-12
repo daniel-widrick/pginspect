@@ -101,3 +101,7 @@ export function StopActivitySampling(arg1) {
 export function TestConnection(arg1, arg2) {
   return window['go']['main']['App']['TestConnection'](arg1, arg2);
 }
+
+export function Version() {
+  return window['go']['main']['App']['Version']();
+}

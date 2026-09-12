@@ -52,3 +52,5 @@ export function StatStatements(arg1:string,arg2:boolean,arg3:number):Promise<db.
 export function StopActivitySampling(arg1:string):Promise<void>;
 
 export function TestConnection(arg1:config.Profile,arg2:string):Promise<string>;
+
+export function Version():Promise<string>;

@@ -387,6 +387,11 @@ func (a *App) ExportCSV(columns []string, rows [][]*string, suggestedName string
 	return path, w.Error()
 }
 
+// Version returns the build version ("dev" for local builds).
+func (a *App) Version() string {
+	return version
+}
+
 // ConfigDir tells the UI where profiles are stored.
 func (a *App) ConfigDir() string {
 	if a.store == nil {

@@ -16,6 +16,9 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+// version is stamped by release builds via -ldflags "-X main.version=v1.2.3".
+var version = "dev"
+
 func main() {
 	app := NewApp()
 
@@ -44,7 +47,7 @@ func main() {
 	appMenu.Append(menu.WindowMenu())
 
 	err := wails.Run(&options.App{
-		Title:     "pginspect",
+		Title:     "pginspect " + version,
 		Width:     1280,
 		Height:    820,
 		MinWidth:  800,

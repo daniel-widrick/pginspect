@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte'
   import { EventsOn } from '../wailsjs/runtime/runtime'
+  import { Version } from '../wailsjs/go/main/App'
   import { store, activeTab, profileName } from './lib/state.svelte'
   import { loadProfiles, blankProfile } from './lib/connections.svelte'
   import { newQueryTab, closeTab, runActive, runQuery, cancelActive, isQueryTab, explainActive, openStatsTab } from './lib/tabs.svelte'
@@ -18,6 +19,7 @@
   let editor = $state<Editor>()
   let grid = $state<ResultsGrid>()
   let mainEl = $state<HTMLElement>()
+  let version = $state('')
 
   const tab = $derived(activeTab())
   const queryTab = $derived(isQueryTab(tab) ? tab : null)
@@ -44,6 +46,7 @@
 
   onMount(() => {
     void loadProfiles()
+    void Version().then(v => (version = v)).catch(() => {})
     const offs = [
       EventsOn('menu:newtab', newTab),
       EventsOn('menu:closetab', () => tab && closeTab(tab.id)),
@@ -130,7 +133,7 @@
       <div class="results-pane"><StatsView {tab} /></div>
     {:else}
       <div class="welcome">
-        <h1>pginspect</h1>
+        <h1>pginspect <span class="version">{version}</span></h1>
         <p class="muted">Connect to a database on the left, or add one to get started.</p>
         <p class="muted small">
           <kbd>⌘/Ctrl</kbd>+<kbd>T</kbd> new query tab &nbsp;
@@ -207,6 +210,7 @@
   .results-pane { flex: 1; min-height: 0; overflow: hidden; }
   .welcome { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
   .welcome h1 { font-weight: 600; font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .welcome .version { font-size: 12px; font-weight: 400; color: var(--fg-3); font-family: var(--font-mono); vertical-align: middle; }
   .welcome .small { font-size: 12px; }
   .status { display: flex; align-items: center; gap: 12px; padding: 3px 10px; border-top: 1px solid var(--border); background: var(--bg-2); font-size: 11.5px; flex-shrink: 0; height: 24px; }
   .status .dot { width: 7px; height: 7px; border-radius: 50%; }
