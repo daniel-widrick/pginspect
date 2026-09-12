@@ -2,8 +2,8 @@ git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 h1:N3IGoHHp9pb6mj1cbXbuaSXV/UMKwmbKLf
 git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3/go.mod h1:QtOLZGz8olr4qH2vWK0QH0w0O4T9fEIjMuWpKUsH7nc=
 github.com/bep/debounce v1.2.1 h1:v67fRdBA9UQu2NhLFXrSg0Brw7CexQekrBwDMM8bzeY=
 github.com/bep/debounce v1.2.1/go.mod h1:H8yggRPQKLUhUoqrJC1bO2xNya7vanpDl7xR3ISbCJ0=
-github.com/daniel-widrick/diagram v0.2.0 h1:EeqondVI6rul6HcUv1EVOJSWxw+zjYEPM9l7i8hTdlg=
-github.com/daniel-widrick/diagram v0.2.0/go.mod h1:AN8Pe0AbBOYZLNaXqwHCib91RJvKwqQdM0o5F9ZVcHw=
+github.com/daniel-widrick/diagram v0.8.0 h1:YAiS4EEOjO24njMxYK/HofDud0f0vQp6J8jWA7ppl0M=
+github.com/daniel-widrick/diagram v0.8.0/go.mod h1:AN8Pe0AbBOYZLNaXqwHCib91RJvKwqQdM0o5F9ZVcHw=
 github.com/danieljoos/wincred v1.2.3 h1:v7dZC2x32Ut3nEfRH+vhoZGvN72+dQ/snVXo/vMFLdQ=
 github.com/danieljoos/wincred v1.2.3/go.mod h1:6qqX0WNrS4RzPZ1tnroDzq9kY3fu1KwE7MRLQK4X0bs=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

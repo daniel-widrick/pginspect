@@ -152,7 +152,7 @@
       }
     }
     notes = newNotes
-    return { direction, nodes, edges, rankSep: 48, nodeSep: 24 }
+    return { direction, routing: 'orthogonal', nodes, edges, rankSep: 48, nodeSep: 24 }
   }
 
   $effect(() => {

@@ -522,12 +522,30 @@ export namespace spec {
 	        this.arrow = source["arrow"];
 	    }
 	}
+	export class Group {
+	    id: string;
+	    label?: string;
+	    kind?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Group(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.label = source["label"];
+	        this.kind = source["kind"];
+	    }
+	}
 	export class Node {
 	    id: string;
 	    kind?: string;
 	    bar?: number;
 	    maxWidth?: number;
 	    overflow?: string;
+	    collapsed?: boolean;
+	    group?: string;
 	    lines: diagram.Span[][];
 	
 	    static createFrom(source: any = {}) {
@@ -541,6 +559,8 @@ export namespace spec {
 	        this.bar = source["bar"];
 	        this.maxWidth = source["maxWidth"];
 	        this.overflow = source["overflow"];
+	        this.collapsed = source["collapsed"];
+	        this.group = source["group"];
 	        this.lines = this.convertValues(source["lines"], diagram.Span);
 	    }
 	
@@ -564,11 +584,13 @@ export namespace spec {
 	}
 	export class Graph {
 	    direction?: string;
+	    routing?: string;
 	    rankSep?: number;
 	    nodeSep?: number;
 	    margin?: number;
 	    nodes: Node[];
 	    edges: Edge[];
+	    groups?: Group[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Graph(source);
@@ -577,11 +599,13 @@ export namespace spec {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.direction = source["direction"];
+	        this.routing = source["routing"];
 	        this.rankSep = source["rankSep"];
 	        this.nodeSep = source["nodeSep"];
 	        this.margin = source["margin"];
 	        this.nodes = this.convertValues(source["nodes"], Node);
 	        this.edges = this.convertValues(source["edges"], Edge);
+	        this.groups = this.convertValues(source["groups"], Group);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -602,6 +626,7 @@ export namespace spec {
 		    return a;
 		}
 	}
+	
 
 }
 

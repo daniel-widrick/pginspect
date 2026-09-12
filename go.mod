@@ -3,7 +3,7 @@ module pginspect
 go 1.26.0
 
 require (
-	github.com/daniel-widrick/diagram v0.2.0
+	github.com/daniel-widrick/diagram v0.8.0
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/wailsapp/wails/v2 v2.15.0
 	github.com/zalando/go-keyring v0.2.8
