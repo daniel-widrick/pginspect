@@ -30,8 +30,8 @@ export function Disconnect(arg1) {
   return window['go']['main']['App']['Disconnect'](arg1);
 }
 
-export function Explain(arg1, arg2, arg3, arg4, arg5) {
-  return window['go']['main']['App']['Explain'](arg1, arg2, arg3, arg4, arg5);
+export function Explain(arg1, arg2, arg3, arg4, arg5, arg6) {
+  return window['go']['main']['App']['Explain'](arg1, arg2, arg3, arg4, arg5, arg6);
 }
 
 export function ExportCSV(arg1, arg2, arg3) {
@@ -82,8 +82,8 @@ export function ResetStatStatements(arg1) {
   return window['go']['main']['App']['ResetStatStatements'](arg1);
 }
 
-export function RunQuery(arg1, arg2, arg3, arg4) {
-  return window['go']['main']['App']['RunQuery'](arg1, arg2, arg3, arg4);
+export function RunQuery(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['RunQuery'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function SaveProfile(arg1, arg2) {

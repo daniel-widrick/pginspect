@@ -13,6 +13,8 @@ export interface QueryTab {
   /** Which pane the results area shows. */
   view: 'results' | 'plan'
   running: boolean
+  /** Wall-clock start of the current run, for the elapsed display. */
+  startedAt: number
   queryId: string
   activeResult: number
 }
@@ -81,6 +83,8 @@ export const store = $state({
   activeTabId: '',
   dialog: null as Dialog,
   maxRows: 1000,
+  /** statement_timeout applied to each run, in ms; 0 means none. */
+  timeoutMs: 0,
   sidebarWidth: 280,
   editorHeight: 260,
   toast: '' as string,
@@ -88,6 +92,16 @@ export const store = $state({
   /** Lets the query runner ask the visible editor for the selected text. */
   editorApi: null as null | { getRunnableSql(): string },
 })
+
+// Remember the few settings worth keeping between launches.
+try {
+  const saved = JSON.parse(localStorage.getItem('pginspect.settings') ?? '{}')
+  if (typeof saved.maxRows === 'number') store.maxRows = saved.maxRows
+  if (typeof saved.timeoutMs === 'number') store.timeoutMs = saved.timeoutMs
+} catch { /* fresh start */ }
+export function saveSettings() {
+  try { localStorage.setItem('pginspect.settings', JSON.stringify({ maxRows: store.maxRows, timeoutMs: store.timeoutMs })) } catch { /* ignore */ }
+}
 
 let toastTimer: ReturnType<typeof setTimeout> | undefined
 export function toast(message: string, ms = 3500) {

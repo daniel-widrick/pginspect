@@ -7,7 +7,7 @@
   import { EditorState, Compartment, Prec } from '@codemirror/state'
   import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
   import { sql, PostgreSQL } from '@codemirror/lang-sql'
-  import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
+  import { autocompletion, acceptCompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete'
   import { bracketMatching, indentOnInput, syntaxHighlighting, HighlightStyle } from '@codemirror/language'
   import { tags as t } from '@lezer/highlight'
 
@@ -72,6 +72,9 @@
         extensions: [
           Prec.highest(keymap.of([
             { key: 'Mod-Enter', run: () => { onRun?.(getRunnableSql()); return true } },
+            // Tab takes the highlighted completion when the list is open; the
+            // default keymap below indents when it is not.
+            { key: 'Tab', run: acceptCompletion },
           ])),
           lineNumbers(),
           highlightActiveLineGutter(),

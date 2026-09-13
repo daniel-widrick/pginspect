@@ -77,7 +77,7 @@ func TestSlowLogLive(t *testing.T) {
 	// A unique constant proves the entry came from a fresh read of the
 	// current log file, not from an older file in another format.
 	marker := fmt.Sprintf("select count(*) from app.orders where customer_id = %d", time.Now().UnixNano()%1000000000)
-	if r := s.RunQuery(ctx, "sl", marker, 1); r.Error != "" {
+	if r := s.RunQuery(ctx, "sl", marker, 1, 0); r.Error != "" {
 		t.Fatal(r.Error)
 	}
 	time.Sleep(300 * time.Millisecond)

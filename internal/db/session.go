@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgconn/ctxwatch"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"pginspect/internal/config"
@@ -44,6 +46,11 @@ type QueryResponse struct {
 	Error      string   `json:"error"`
 	DurationMs int64    `json:"durationMs"`
 	Cancelled  bool     `json:"cancelled"`
+	// TimedOut is set when statement_timeout stopped the statement.
+	TimedOut bool `json:"timedOut"`
+	// LimitStopped is set when a SELECT was cancelled server-side after the
+	// row limit was reached, so the rest of the result was never streamed.
+	LimitStopped bool `json:"limitStopped"`
 }
 
 // Info describes an open connection.
@@ -98,6 +105,11 @@ func Open(ctx context.Context, p config.Profile, password string) (*Session, err
 	cfg.MinConns = 0
 	cfg.MaxConnIdleTime = 5 * time.Minute
 	cfg.ConnConfig.ConnectTimeout = 10 * time.Second
+	// Cancel a query by asking the server to stop it, so the connection stays
+	// usable; only if the server ignores that is the socket closed.
+	cfg.ConnConfig.BuildContextWatcherHandler = func(c *pgconn.PgConn) ctxwatch.Handler {
+		return &pgconn.CancelRequestContextWatcherHandler{Conn: c, CancelRequestDelay: 0, DeadlineDelay: 10 * time.Second}
+	}
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err
@@ -152,8 +164,11 @@ func (s *Session) Cancel(queryID string) bool {
 
 // RunQuery executes a script using the simple query protocol, so it may hold
 // several statements. Values come back as the server's text form. At most
-// maxRows rows per result are kept; the rest are drained and counted.
-func (s *Session) RunQuery(ctx context.Context, queryID, sql string, maxRows int) QueryResponse {
+// maxRows rows per result are kept. For a single plain SELECT the statement
+// is cancelled server-side once the limit is reached, so a huge table does
+// not have to stream in full; other statements are drained and counted.
+// timeoutMs > 0 applies statement_timeout for this run only.
+func (s *Session) RunQuery(ctx context.Context, queryID, sql string, maxRows int, timeoutMs int) QueryResponse {
 	if maxRows <= 0 {
 		maxRows = 1000
 	}
@@ -173,8 +188,13 @@ func (s *Session) RunQuery(ctx context.Context, queryID, sql string, maxRows int
 	finish := func(err error) QueryResponse {
 		resp.DurationMs = time.Since(start).Milliseconds()
 		if err != nil {
+			if resp.LimitStopped && isCancelledPgError(err) {
+				// We asked for the cancel; the results kept so far are the answer.
+				return resp
+			}
 			resp.Error = describeError(err)
-			resp.Cancelled = errors.Is(ctx.Err(), context.Canceled) || isCancelledPgError(err)
+			resp.TimedOut = isTimeoutPgError(err)
+			resp.Cancelled = !resp.TimedOut && (errors.Is(ctx.Err(), context.Canceled) || isCancelledPgError(err))
 		}
 		return resp
 	}
@@ -184,11 +204,24 @@ func (s *Session) RunQuery(ctx context.Context, queryID, sql string, maxRows int
 		return finish(err)
 	}
 	defer conn.Release()
-	return finish(s.runScript(ctx, conn.Conn(), sql, maxRows, &resp))
+	if timeoutMs > 0 {
+		if _, err := conn.Exec(ctx, fmt.Sprintf("SET statement_timeout = %d", timeoutMs)); err != nil {
+			return finish(err)
+		}
+		defer func() {
+			rctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_, _ = conn.Exec(rctx, "RESET statement_timeout")
+			cancel()
+		}()
+	}
+	stopAtLimit := IsPlainSelect(sql)
+	return finish(s.runScript(ctx, conn.Conn(), sql, maxRows, stopAtLimit, &resp))
 }
 
-// runScript executes a script on conn, appending completed statements to resp.
-func (s *Session) runScript(ctx context.Context, conn *pgx.Conn, sql string, maxRows int, resp *QueryResponse) error {
+// runScript executes a script on conn, appending completed statements to
+// resp. With stopAtLimit, the statement is cancelled once maxRows rows have
+// been kept and resp.LimitStopped is set.
+func (s *Session) runScript(ctx context.Context, conn *pgx.Conn, sql string, maxRows int, stopAtLimit bool, resp *QueryResponse) error {
 	mrr := conn.PgConn().Exec(ctx, sql)
 	for mrr.NextResult() {
 		rr := mrr.ResultReader()
@@ -204,6 +237,12 @@ func (s *Session) runScript(ctx context.Context, conn *pgx.Conn, sql string, max
 			res.RowCount++
 			if res.RowCount > maxRows {
 				res.Truncated = true
+				if stopAtLimit && !resp.LimitStopped {
+					resp.LimitStopped = true
+					cctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+					_ = conn.PgConn().CancelRequest(cctx)
+					cancel()
+				}
 				continue
 			}
 			vals := rr.Values()
@@ -218,6 +257,10 @@ func (s *Session) runScript(ctx context.Context, conn *pgx.Conn, sql string, max
 		}
 		tag, err := rr.Close()
 		if err != nil {
+			if resp.LimitStopped && isCancelledPgError(err) {
+				res.Command = "SELECT"
+				res.RowCount = maxRows
+			}
 			resp.Results = append(resp.Results, res)
 			_ = mrr.Close()
 			return err
@@ -239,6 +282,7 @@ type ExplainResponse struct {
 	Error      string `json:"error"`
 	DurationMs int64  `json:"durationMs"`
 	Cancelled  bool   `json:"cancelled"`
+	TimedOut   bool   `json:"timedOut"`
 }
 
 // Explain runs EXPLAIN (FORMAT JSON) on a single statement. With analyze the
@@ -246,7 +290,7 @@ type ExplainResponse struct {
 // so explaining an UPDATE or DELETE leaves no trace. With generic, the
 // statement may contain $1-style parameters and is planned without values
 // (PostgreSQL 16 or newer); analyze and generic are mutually exclusive.
-func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze, generic bool) ExplainResponse {
+func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze, generic bool, timeoutMs int) ExplainResponse {
 	stmt := strings.TrimSpace(sql)
 	stmt = strings.TrimRight(stmt, "; \t\r\n")
 	if stmt == "" {
@@ -284,7 +328,8 @@ func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze, gen
 		out.DurationMs = time.Since(start).Milliseconds()
 		if err != nil {
 			out.Error = describeError(err)
-			out.Cancelled = errors.Is(ctx.Err(), context.Canceled) || isCancelledPgError(err)
+			out.TimedOut = isTimeoutPgError(err)
+			out.Cancelled = !out.TimedOut && (errors.Is(ctx.Err(), context.Canceled) || isCancelledPgError(err))
 		}
 		return out
 	}
@@ -295,8 +340,18 @@ func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze, gen
 	}
 	defer conn.Release()
 
+	if timeoutMs > 0 {
+		if _, err := conn.Exec(ctx, fmt.Sprintf("SET statement_timeout = %d", timeoutMs)); err != nil {
+			return finish(err)
+		}
+		defer func() {
+			rctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			_, _ = conn.Exec(rctx, "RESET statement_timeout")
+			cancel()
+		}()
+	}
 	resp := QueryResponse{}
-	err = s.runScript(ctx, conn.Conn(), script, 10000, &resp)
+	err = s.runScript(ctx, conn.Conn(), script, 10000, false, &resp)
 	if analyze && conn.Conn().PgConn().TxStatus() != 'I' {
 		// The script stopped before its ROLLBACK; do not hand an aborted
 		// transaction back to the pool.
@@ -351,7 +406,39 @@ func (s *Session) typeName(conn *pgx.Conn, oid uint32) string {
 
 func isCancelledPgError(err error) bool {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "57014"
+	return errors.As(err, &pgErr) && pgErr.Code == "57014" && !strings.Contains(pgErr.Message, "statement timeout")
+}
+
+func isTimeoutPgError(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "57014" && strings.Contains(pgErr.Message, "statement timeout")
+}
+
+var leadingCommentRe = regexp.MustCompile(`(?s)^\s*(?:--[^\n]*\n\s*|/\*.*?\*/\s*)*`)
+
+// IsPlainSelect reports whether sql is a single read-only statement
+// (SELECT, WITH, TABLE or VALUES) with no data-modifying CTE, so it is safe
+// to cancel once enough rows have been read. Anything else, including a
+// script of several statements, is streamed in full.
+func IsPlainSelect(sql string) bool {
+	body := strings.TrimSpace(leadingCommentRe.ReplaceAllString(sql, ""))
+	body = strings.TrimRight(body, "; \t\r\n")
+	if body == "" || strings.Contains(body, ";") {
+		return false
+	}
+	lower := strings.ToLower(body)
+	switch {
+	case strings.HasPrefix(lower, "select"), strings.HasPrefix(lower, "table"), strings.HasPrefix(lower, "values"):
+	case strings.HasPrefix(lower, "with"):
+		for _, kw := range []string{"insert", "update", "delete", "merge"} {
+			if regexp.MustCompile(`\b` + kw + `\b`).MatchString(lower) {
+				return false
+			}
+		}
+	default:
+		return false
+	}
+	return !regexp.MustCompile(`\b(?:into|for\s+update|for\s+share|for\s+no\s+key\s+update|for\s+key\s+share)\b`).MatchString(lower)
 }
 
 // describeError formats Postgres errors with position and detail information.

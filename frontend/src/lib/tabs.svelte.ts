@@ -16,6 +16,7 @@ export function newQueryTab(connId: string, sql = '', title = ''): QueryTab {
     plan: null,
     view: 'results',
     running: false,
+    startedAt: 0,
     queryId: '',
     activeResult: 0,
   }
@@ -170,10 +171,11 @@ export async function runQuery(tab: QueryTab, sql: string): Promise<void> {
     return
   }
   tab.running = true
+  tab.startedAt = Date.now()
   tab.queryId = nextId()
   tab.view = 'results'
   try {
-    const resp = await RunQuery(tab.connId, tab.queryId, sql, store.maxRows)
+    const resp = await RunQuery(tab.connId, tab.queryId, sql, store.maxRows, store.timeoutMs)
     resp.results ??= []
     tab.response = resp
     tab.activeResult = Math.max(0, resp.results.length - 1)
@@ -204,10 +206,11 @@ export async function explainQuery(tab: QueryTab, sql: string, analyze: boolean,
     return
   }
   tab.running = true
+  tab.startedAt = Date.now()
   tab.queryId = nextId()
   tab.view = 'plan'
   try {
-    tab.plan = await Explain(tab.connId, tab.queryId, sql, analyze, generic)
+    tab.plan = await Explain(tab.connId, tab.queryId, sql, analyze, generic, analyze ? store.timeoutMs : 0)
   } catch (e) {
     tab.plan = { plan: '', analyze, generic, error: errorMessage(e), durationMs: 0, cancelled: false } as any
   } finally {

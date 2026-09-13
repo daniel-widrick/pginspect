@@ -28,7 +28,13 @@ Features so far:
   Cmd/Ctrl+Enter runs the selection, or the whole editor if nothing is
   selected. Scripts with several statements run in one go.
 - Results grid: one tab per statement, sortable columns, NULL rendering,
-  row limit, cancel, copy cell/row, CSV export.
+  copy cell/row, CSV export. Rows are virtualised, so wide or huge results
+  do not freeze the window. A row limit and a per-run statement timeout are
+  set in the toolbar and remembered; a plain SELECT is cancelled on the
+  server as soon as the limit is reached, so `select *` on a huge table
+  returns in the time it takes to read the first page. Cancel stops a
+  running statement with a server-side cancel request and keeps the
+  connection.
 - Explain plan viewer: Cmd/Ctrl+E shows the estimated plan, Cmd/Ctrl+Shift+E
   runs EXPLAIN ANALYZE with buffers. The plan is drawn as a tree diagram
   (laid out by [diagram](https://github.com/daniel-widrick/diagram), which

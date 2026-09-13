@@ -2,7 +2,7 @@
   import { onMount } from 'svelte'
   import { EventsOn } from '../wailsjs/runtime/runtime'
   import { Version } from '../wailsjs/go/main/App'
-  import { store, activeTab, profileName } from './lib/state.svelte'
+  import { store, activeTab, profileName, saveSettings } from './lib/state.svelte'
   import { loadProfiles, blankProfile } from './lib/connections.svelte'
   import { newQueryTab, closeTab, runActive, runQuery, cancelActive, isQueryTab, explainActive, openStatsTab, openSlowLogTab } from './lib/tabs.svelte'
   import Sidebar from './components/Sidebar.svelte'
@@ -21,6 +21,13 @@
   let grid = $state<ResultsGrid>()
   let mainEl = $state<HTMLElement>()
   let version = $state('')
+  // Ticks while a query runs so the toolbar can show elapsed time.
+  let now = $state(Date.now())
+  $effect(() => {
+    if (!queryTab?.running) return
+    const t = setInterval(() => (now = Date.now()), 250)
+    return () => clearInterval(t)
+  })
 
   const tab = $derived(activeTab())
   const queryTab = $derived(isQueryTab(tab) ? tab : null)
@@ -99,15 +106,24 @@
         </div>
       {/key}
       <div class="toolbar">
-        <button class="primary small" onclick={() => runActive()} disabled={queryTab.running || !info}>▶ Run</button>
-        <button class="small" onclick={cancelActive} disabled={!queryTab.running}>Cancel</button>
+        {#if queryTab.running}
+          <button class="small danger cancel" onclick={cancelActive} title="Ask the server to stop this statement (Cmd/Ctrl+Shift+Esc)">■ Cancel · {((now - queryTab.startedAt) / 1000).toFixed(1)} s</button>
+        {:else}
+          <button class="primary small" onclick={() => runActive()} disabled={!info}>▶ Run</button>
+        {/if}
         <span class="sep"></span>
         <button class="small" onclick={() => explainActive(false)} disabled={queryTab.running || !info} title="Estimated plan (Cmd/Ctrl+E)">Explain</button>
         <button class="small" onclick={() => explainActive(true)} disabled={queryTab.running || !info} title="Run and show the actual plan; writes are rolled back (Cmd/Ctrl+Shift+E)">Explain Analyze</button>
         <span class="sep"></span>
         <label class="limit">Limit
-          <select bind:value={store.maxRows}>
+          <select bind:value={store.maxRows} onchange={saveSettings}>
             {#each [100, 500, 1000, 5000, 20000] as n}<option value={n}>{n}</option>{/each}
+          </select>
+        </label>
+        <label class="limit" title="statement_timeout for each run; the server stops a statement that runs longer">Timeout
+          <select bind:value={store.timeoutMs} onchange={saveSettings}>
+            <option value={0}>none</option>
+            {#each [[5000, '5 s'], [30000, '30 s'], [60000, '1 min'], [300000, '5 min'], [1800000, '30 min']] as [ms, label]}<option value={ms}>{label}</option>{/each}
           </select>
         </label>
         <span class="sep"></span>
@@ -166,8 +182,9 @@
       {:else if queryTab?.response}
         {@const r = queryTab.response.results[queryTab.activeResult]}
         {#if r?.columns?.length}
-          <span>{r.rows.length.toLocaleString()}{r.truncated ? ` of ${r.rowCount.toLocaleString()}` : ''} rows{r.truncated ? ' (truncated)' : ''}</span>
+          <span>{r.rows.length.toLocaleString()}{r.truncated && !queryTab.response.limitStopped ? ` of ${r.rowCount.toLocaleString()}` : ''} rows{queryTab.response.limitStopped ? ' · stopped at the limit, statement cancelled on the server' : r.truncated ? ' (truncated)' : ''}</span>
         {/if}
+        {#if queryTab.response.timedOut}<span class="muted">statement timeout</span>{/if}
         <span class="muted">{fmtDuration(queryTab.response.durationMs)}</span>
       {/if}
     </footer>
@@ -206,6 +223,7 @@
   .sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
   .limit { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--fg-2); }
   .limit select { width: auto; padding: 2px 6px; font-size: 12px; }
+  .cancel { background: color-mix(in srgb, var(--danger) 15%, var(--bg-3)); border-color: var(--danger); font-variant-numeric: tabular-nums; }
   .grow { flex: 1; }
   .segmented { display: inline-flex; }
   .segmented button { border-radius: 0; }

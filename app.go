@@ -249,23 +249,23 @@ func (a *App) RelationInfo(connID, schema, name string) (db.RelationInfo, error)
 
 // RunQuery executes SQL on a connection. Errors from the server are reported
 // inside the response so partial results survive.
-func (a *App) RunQuery(connID, queryID, sql string, maxRows int) (db.QueryResponse, error) {
+func (a *App) RunQuery(connID, queryID, sql string, maxRows int, timeoutMs int) (db.QueryResponse, error) {
 	s, err := a.conns.Get(connID)
 	if err != nil {
 		return db.QueryResponse{}, err
 	}
-	return s.RunQuery(a.ctx, queryID, sql, maxRows), nil
+	return s.RunQuery(a.ctx, queryID, sql, maxRows, timeoutMs), nil
 }
 
 // Explain returns the plan for a statement as EXPLAIN JSON. With analyze the
 // statement executes inside a transaction that is rolled back afterwards.
 // With generic (PG16+) the statement may contain $n parameters.
-func (a *App) Explain(connID, queryID, sql string, analyze, generic bool) (db.ExplainResponse, error) {
+func (a *App) Explain(connID, queryID, sql string, analyze, generic bool, timeoutMs int) (db.ExplainResponse, error) {
 	s, err := a.conns.Get(connID)
 	if err != nil {
 		return db.ExplainResponse{}, err
 	}
-	return s.Explain(a.ctx, queryID, sql, analyze, generic), nil
+	return s.Explain(a.ctx, queryID, sql, analyze, generic, timeoutMs), nil
 }
 
 // CancelQuery asks the server to abort a running query.

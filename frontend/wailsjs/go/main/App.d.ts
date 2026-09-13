@@ -18,7 +18,7 @@ export function DeleteProfile(arg1:string):Promise<void>;
 
 export function Disconnect(arg1:string):Promise<void>;
 
-export function Explain(arg1:string,arg2:string,arg3:string,arg4:boolean,arg5:boolean):Promise<db.ExplainResponse>;
+export function Explain(arg1:string,arg2:string,arg3:string,arg4:boolean,arg5:boolean,arg6:number):Promise<db.ExplainResponse>;
 
 export function ExportCSV(arg1:Array<string>,arg2:Array<any>,arg3:string):Promise<string>;
 
@@ -44,7 +44,7 @@ export function RenderDiagram(arg1:spec.Graph,arg2:string,arg3:string):Promise<s
 
 export function ResetStatStatements(arg1:string):Promise<void>;
 
-export function RunQuery(arg1:string,arg2:string,arg3:string,arg4:number):Promise<db.QueryResponse>;
+export function RunQuery(arg1:string,arg2:string,arg3:string,arg4:number,arg5:number):Promise<db.QueryResponse>;
 
 export function SaveProfile(arg1:config.Profile,arg2:string):Promise<config.Profile>;
 

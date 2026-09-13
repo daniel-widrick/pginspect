@@ -14,6 +14,12 @@
   let selected = $state<{ r: number; c: number } | null>(null)
   let gridEl = $state<HTMLDivElement>()
 
+  function onScroll(e: Event) {
+    const el = e.currentTarget as HTMLDivElement
+    scrollTop = el.scrollTop
+    viewportH = el.clientHeight
+  }
+
   const result = $derived<db.Result | undefined>(tab.response?.results[tab.activeResult])
 
   // Reset view state when a new response arrives.
@@ -36,6 +42,23 @@
     }
     return [...indexed].sort((x, y) => sortDir * cmp(x.row[sortCol] as any, y.row[sortCol] as any))
   })
+
+  // Only the rows in view are in the DOM: a thousand wide rows of large
+  // values would otherwise freeze the page while it renders.
+  const ROW_H = 24
+  const OVERSCAN = 12
+  let scrollTop = $state(0)
+  let viewportH = $state(600)
+  const first = $derived(Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN))
+  const last = $derived(Math.min(rows.length, Math.ceil((scrollTop + viewportH) / ROW_H) + OVERSCAN))
+  const visible = $derived(rows.slice(first, last).map((x, k) => ({ ...x, r: first + k })))
+
+  /** Cells keep the full value for copying but draw at most this many characters. */
+  const CELL_MAX = 300
+  function shown(v: string | null): string {
+    if (v === null) return 'NULL'
+    return v.length > CELL_MAX ? v.slice(0, CELL_MAX) + '…' : v
+  }
 
   function toggleSort(c: number) {
     if (sortCol === c) {
@@ -111,8 +134,13 @@
       </div>
     {/if}
 
+    {#if tab.response.limitStopped}
+      <div class="note">Stopped after {rows.length.toLocaleString()} rows: the statement was cancelled on the server once the limit was reached, so the full result was never streamed. Raise the limit to fetch more.</div>
+    {:else if tab.response.timedOut}
+      <div class="note warn">The statement ran past the timeout and was stopped by the server.</div>
+    {/if}
     {#if result && result.columns?.length}
-      <div class="grid" bind:this={gridEl} tabindex="0" onkeydown={onKeydown} role="grid">
+      <div class="grid" bind:this={gridEl} tabindex="0" onkeydown={onKeydown} onscroll={onScroll} role="grid">
         <table>
           <thead>
             <tr>
@@ -127,8 +155,9 @@
             </tr>
           </thead>
           <tbody>
-            {#each rows as { row, i }, r (i)}
-              <tr>
+            {#if first > 0}<tr class="spacer" style="height: {first * ROW_H}px"><td colspan={result.columns.length + 1}></td></tr>{/if}
+            {#each visible as { row, i, r } (i)}
+              <tr style="height: {ROW_H}px">
                 <td class="rownum" ondblclick={() => copyRowAsText(r)} title="Double-click to copy row">{i + 1}</td>
                 {#each row as v, c}
                   <td
@@ -138,10 +167,11 @@
                     class:num={numericTypes.has(result.columns[c]?.type)}
                     onclick={() => (selected = { r, c })}
                     ondblclick={() => { void ClipboardSetText(cellText(v as any)); toast('Copied') }}
-                  >{v === null ? 'NULL' : v}</td>
+                  >{shown(v as any)}</td>
                 {/each}
               </tr>
             {/each}
+            {#if last < rows.length}<tr class="spacer" style="height: {(rows.length - last) * ROW_H}px"><td colspan={result.columns.length + 1}></td></tr>{/if}
           </tbody>
         </table>
       </div>
@@ -164,6 +194,10 @@
   .grid { flex: 1; overflow: auto; outline: none; min-height: 0; }
   table { border-collapse: separate; border-spacing: 0; font-family: var(--font-mono); font-size: 12px; min-width: 100%; }
   th, td { padding: 3px 10px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); white-space: pre; max-width: 480px; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+  tbody td { height: 24px; box-sizing: border-box; line-height: 17px; }
+  tr.spacer td { padding: 0; border: none; background: transparent !important; }
+  .note { padding: 6px 14px; font-size: 12px; color: var(--fg-2); background: color-mix(in srgb, var(--accent) 8%, var(--bg)); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .note.warn { background: color-mix(in srgb, var(--warn) 12%, var(--bg)); }
   th { position: sticky; top: 0; background: var(--bg-2); font-weight: 600; cursor: pointer; user-select: none; z-index: 1; }
   th:hover { background: var(--bg-hover); }
   .colname { display: block; }

@@ -94,6 +94,7 @@ export namespace db {
 	    error: string;
 	    durationMs: number;
 	    cancelled: boolean;
+	    timedOut: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ExplainResponse(source);
@@ -107,6 +108,7 @@ export namespace db {
 	        this.error = source["error"];
 	        this.durationMs = source["durationMs"];
 	        this.cancelled = source["cancelled"];
+	        this.timedOut = source["timedOut"];
 	    }
 	}
 	export class IndexInfo {
@@ -230,6 +232,8 @@ export namespace db {
 	    error: string;
 	    durationMs: number;
 	    cancelled: boolean;
+	    timedOut: boolean;
+	    limitStopped: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new QueryResponse(source);
@@ -241,6 +245,8 @@ export namespace db {
 	        this.error = source["error"];
 	        this.durationMs = source["durationMs"];
 	        this.cancelled = source["cancelled"];
+	        this.timedOut = source["timedOut"];
+	        this.limitStopped = source["limitStopped"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
