@@ -1,0 +1,1 @@
+select * from shop.orders where status = 'paid' and shipped_at is null

@@ -1,0 +1,82 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Seq Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "customers",
+      "Alias": "c",
+      "Startup Cost": 3836.93,
+      "Total Cost": 5316.93,
+      "Plan Rows": 25000,
+      "Plan Width": 102,
+      "Actual Startup Time": 6.889,
+      "Actual Total Time": 10.940,
+      "Actual Rows": 47462,
+      "Actual Loops": 1,
+      "Filter": "(NOT (ANY (id = (hashed SubPlan 1).col1)))",
+      "Rows Removed by Filter": 2538,
+      "Shared Hit Blocks": 1562,
+      "Shared Read Blocks": 1118,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0,
+      "Plans": [
+        {
+          "Node Type": "Index Scan",
+          "Parent Relationship": "SubPlan",
+          "Subplan Name": "SubPlan 1",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Scan Direction": "Forward",
+          "Index Name": "orders_status_idx",
+          "Relation Name": "orders",
+          "Alias": "orders",
+          "Startup Cost": 0.42,
+          "Total Cost": 3827.79,
+          "Plan Rows": 3656,
+          "Plan Width": 8,
+          "Actual Startup Time": 0.038,
+          "Actual Total Time": 6.475,
+          "Actual Rows": 3026,
+          "Actual Loops": 1,
+          "Index Cond": "(status = 'cancelled'::text)",
+          "Rows Removed by Index Recheck": 0,
+          "Shared Hit Blocks": 707,
+          "Shared Read Blocks": 1118,
+          "Shared Dirtied Blocks": 0,
+          "Shared Written Blocks": 0,
+          "Local Hit Blocks": 0,
+          "Local Read Blocks": 0,
+          "Local Dirtied Blocks": 0,
+          "Local Written Blocks": 0,
+          "Temp Read Blocks": 0,
+          "Temp Written Blocks": 0
+        }
+      ]
+    },
+    "Settings": {
+    },
+    "Planning": {
+      "Shared Hit Blocks": 150,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.174,
+    "Triggers": [
+    ],
+    "Execution Time": 11.975
+  }
+]

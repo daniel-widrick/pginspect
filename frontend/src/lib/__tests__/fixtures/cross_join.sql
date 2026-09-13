@@ -1,0 +1,1 @@
+select count(*) from shop.countries a, shop.categories b

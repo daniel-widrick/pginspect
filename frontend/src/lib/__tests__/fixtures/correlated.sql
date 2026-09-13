@@ -1,0 +1,1 @@
+select * from shop.slow_top_products order by units_sold desc nulls last limit 10

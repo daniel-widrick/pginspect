@@ -1,0 +1,1 @@
+select * from shop.orders where status = 'paid' and total > 900

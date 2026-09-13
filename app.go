@@ -239,6 +239,18 @@ func (a *App) FunctionDefinition(connID string, oid uint32) (string, error) {
 }
 
 // ListColumns returns the columns of a relation.
+// ResolveTables looks up relations by bare name so the plan analyser can
+// qualify them and resolve unqualified column references.
+func (a *App) ResolveTables(connID string, names []string) ([]db.TableColumns, error) {
+	s, err := a.conns.Get(connID)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := a.catalogCtx()
+	defer cancel()
+	return s.ResolveTables(ctx, names)
+}
+
 func (a *App) ListColumns(connID, schema, name string) ([]db.ColumnInfo, error) {
 	s, err := a.conns.Get(connID)
 	if err != nil {

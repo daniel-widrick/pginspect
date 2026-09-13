@@ -1,0 +1,1 @@
+select c.email, o.total from shop.customers c left join shop.orders o on o.customer_id = c.id where o.status = 'new'

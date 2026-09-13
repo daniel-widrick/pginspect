@@ -1,0 +1,20 @@
+seqscan_filter|select * from shop.orders where note = 'gift wrap please'
+index_filter|select * from shop.orders where status = 'paid' and total > 900
+hash_full_table|select p.name, sum(oi.quantity) as units from shop.products p join shop.order_items oi on oi.product_id = p.id where p.id = 42 group by p.name
+late_filter|select c.id, count(o.id) from shop.customers c left join shop.orders o on o.customer_id = c.id where coalesce(o.status, 'none') <> 'shipped' group by c.id
+cte_fence|with recent as materialized (select * from shop.orders where placed_at > now() - interval '365 days') select * from recent where customer_id = 17
+fanout_distinct|select distinct c.id, c.email from shop.customers c join shop.orders o on o.customer_id = c.id join shop.order_items oi on oi.order_id = o.id where c.country = 'DE'
+cross_join|select count(*) from shop.countries a, shop.categories b
+sort_spill|set work_mem = '64kB'; select customer_id, kind from shop.events where id < 200000 order by occurred_at
+hash_batches|set work_mem = '64kB'; select count(*) from shop.orders o join shop.customers c on c.id = o.customer_id where c.tier = 'pro'
+not_in|select * from shop.customers c where c.id not in (select customer_id from shop.orders where status = 'cancelled')
+correlated|select * from shop.slow_top_products order by units_sold desc nulls last limit 10
+expr_lower|select * from shop.customers where lower(email) = 'user1@example.com'
+expr_like|select * from shop.customers where email like '%@example.io'
+expr_cast|select * from shop.orders where placed_at::date = '2025-06-01'
+many_joins|select c1.code from shop.countries c1 join shop.countries c2 on c2.code = c1.code join shop.countries c3 on c3.code = c1.code join shop.countries c4 on c4.code = c1.code join shop.countries c5 on c5.code = c1.code join shop.countries c6 on c6.code = c1.code join shop.countries c7 on c7.code = c1.code join shop.countries c8 on c8.code = c1.code join shop.countries c9 on c9.code = c1.code join shop.countries c10 on c10.code = c1.code
+misestimate|select * from shop.orders where status = 'paid' and shipped_at is null
+offset_page|select * from shop.orders order by id offset 100000 limit 20
+outer_where|select c.email, o.total from shop.customers c left join shop.orders o on o.customer_id = c.id where o.status = 'new'
+or_across|select count(*) from shop.orders o join shop.customers c on c.id = o.customer_id where c.tier = 'enterprise' or o.status = 'cancelled'
+nl_missing_index|set enable_hashjoin = off; set enable_mergejoin = off; select count(*) from shop.products p join shop.order_items oi on oi.product_id = p.id where p.category_id = 3

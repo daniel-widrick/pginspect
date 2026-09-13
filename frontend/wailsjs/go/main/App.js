@@ -90,6 +90,10 @@ export function ResetStatStatements(arg1) {
   return window['go']['main']['App']['ResetStatStatements'](arg1);
 }
 
+export function ResolveTables(arg1, arg2) {
+  return window['go']['main']['App']['ResolveTables'](arg1, arg2);
+}
+
 export function RunQuery(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['RunQuery'](arg1, arg2, arg3, arg4, arg5);
 }

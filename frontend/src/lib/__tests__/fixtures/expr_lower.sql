@@ -1,0 +1,1 @@
+select * from shop.customers where lower(email) = 'user1@example.com'

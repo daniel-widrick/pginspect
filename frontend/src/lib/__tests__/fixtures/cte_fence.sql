@@ -1,0 +1,1 @@
+with recent as materialized (select * from shop.orders where placed_at > now() - interval '365 days') select * from recent where customer_id = 17

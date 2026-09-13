@@ -53,6 +53,26 @@ Features so far:
   routed orthogonally and leave each table from spread ports.
   ANALYZE runs inside a transaction that is always rolled back, so it is safe
   on UPDATE and DELETE.
+- Hints: a panel beside every plan that names what to fix and gives the SQL
+  to do it. The rules are deterministic and run locally: sequential scans
+  whose filter discards most rows (with the CREATE INDEX, including
+  expression and trigram indexes, and a range rewrite for casts an index
+  cannot serve), indexes that fetch rows a filter then throws away, joins
+  that read a whole table to keep a few rows because the join key has no
+  index, sorts and hash joins that spill (with the work_mem to set, or the
+  index that removes the sort), row estimates that are off (ANALYZE or
+  extended statistics on the correlated columns), correlated subqueries run
+  per row, and lossy bitmaps, heap fetches, JIT and trigger time. A row-flow
+  pass finds where rows are discarded late: a condition evaluated after a
+  join instead of at the scan (typically the nullable side of an outer join
+  or an OR across tables), a CTE or subquery filtered after being computed,
+  a join that multiplies rows a later DISTINCT collapses, cross joins, and
+  more tables than join_collapse_limit, where the written order decides the
+  plan. The statement text is parsed with the real PostgreSQL parser
+  (libpg_query compiled to WebAssembly, loaded on first use) to catch NOT IN
+  against a subquery, large OFFSETs, WHERE clauses that turn an outer join
+  into an inner one, MATERIALIZED CTEs and SELECT *. Each hint links to its
+  plan node; the row-flow table shows rows in and out of every step.
 - Query statistics: a pg_stat_statements browser (the sigma button on a
   connection, or Tools > Query Statistics) sorted by total time, with calls,
   mean and max, rows, cache hit ratio, temp spill, I/O time and share of
@@ -134,6 +154,12 @@ docker exec -i pginspect-pg psql -q -U postgres -d inspect < testdata/seed.sql
 larger dataset.
 
 `testdata/explain-examples.sql` has queries to try with the plan viewer.
+
+The hint rules have unit tests in `frontend/src/lib/__tests__` (run with
+`npm test` in `frontend`). Their fixtures are real EXPLAIN ANALYZE output
+from the seed database; `fixtures/queries.txt` lists the query behind each
+one, so a fixture can be regenerated with `explain (analyze, buffers,
+timing, format json, settings)` against the container.
 
 ### Password storage
 

@@ -283,6 +283,9 @@ type ExplainResponse struct {
 	DurationMs int64  `json:"durationMs"`
 	Cancelled  bool   `json:"cancelled"`
 	TimedOut   bool   `json:"timedOut"`
+	// SQL is the statement that was explained, so the plan viewer can
+	// analyse the query text alongside the plan.
+	SQL string `json:"sql"`
 }
 
 // Explain runs EXPLAIN (FORMAT JSON) on a single statement. With analyze the
@@ -323,7 +326,7 @@ func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze, gen
 	}()
 
 	start := time.Now()
-	out := ExplainResponse{Analyze: analyze, Generic: generic}
+	out := ExplainResponse{Analyze: analyze, Generic: generic, SQL: stmt}
 	finish := func(err error) ExplainResponse {
 		out.DurationMs = time.Since(start).Milliseconds()
 		if err != nil {

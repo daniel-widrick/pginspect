@@ -95,6 +95,7 @@ export namespace db {
 	    durationMs: number;
 	    cancelled: boolean;
 	    timedOut: boolean;
+	    sql: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ExplainResponse(source);
@@ -109,6 +110,7 @@ export namespace db {
 	        this.durationMs = source["durationMs"];
 	        this.cancelled = source["cancelled"];
 	        this.timedOut = source["timedOut"];
+	        this.sql = source["sql"];
 	    }
 	}
 	export class IndexInfo {
@@ -601,6 +603,22 @@ export namespace db {
 		    }
 		    return a;
 		}
+	}
+	export class TableColumns {
+	    schema: string;
+	    name: string;
+	    columns: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new TableColumns(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.schema = source["schema"];
+	        this.name = source["name"];
+	        this.columns = source["columns"];
+	    }
 	}
 
 }

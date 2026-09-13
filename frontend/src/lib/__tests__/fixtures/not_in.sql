@@ -1,0 +1,1 @@
+select * from shop.customers c where c.id not in (select customer_id from shop.orders where status = 'cancelled')

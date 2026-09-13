@@ -1,0 +1,1 @@
+select customer_id, kind from shop.events where id < 200000 order by occurred_at

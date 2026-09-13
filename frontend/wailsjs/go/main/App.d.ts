@@ -49,6 +49,8 @@ export function RenderDiagram(arg1:spec.Graph,arg2:string,arg3:string):Promise<s
 
 export function ResetStatStatements(arg1:string):Promise<void>;
 
+export function ResolveTables(arg1:string,arg2:Array<string>):Promise<Array<db.TableColumns>>;
+
 export function RunQuery(arg1:string,arg2:string,arg3:string,arg4:number,arg5:number):Promise<db.QueryResponse>;
 
 export function SaveProfile(arg1:config.Profile,arg2:string):Promise<config.Profile>;

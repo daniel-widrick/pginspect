@@ -1,0 +1,1 @@
+select * from shop.orders order by id offset 100000 limit 20

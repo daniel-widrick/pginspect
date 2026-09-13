@@ -1,0 +1,105 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Aggregate",
+      "Strategy": "Plain",
+      "Partial Mode": "Finalize",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Startup Cost": 19700.08,
+      "Total Cost": 19700.09,
+      "Plan Rows": 1,
+      "Plan Width": 8,
+      "Plans": [
+        {
+          "Node Type": "Gather",
+          "Parent Relationship": "Outer",
+          "Parallel Aware": false,
+          "Async Capable": false,
+          "Startup Cost": 19699.87,
+          "Total Cost": 19700.08,
+          "Plan Rows": 2,
+          "Plan Width": 8,
+          "Workers Planned": 2,
+          "Single Copy": false,
+          "Plans": [
+            {
+              "Node Type": "Aggregate",
+              "Strategy": "Plain",
+              "Partial Mode": "Partial",
+              "Parent Relationship": "Outer",
+              "Parallel Aware": false,
+              "Async Capable": false,
+              "Startup Cost": 18699.87,
+              "Total Cost": 18699.88,
+              "Plan Rows": 1,
+              "Plan Width": 8,
+              "Plans": [
+                {
+                  "Node Type": "Nested Loop",
+                  "Parent Relationship": "Outer",
+                  "Parallel Aware": false,
+                  "Async Capable": false,
+                  "Join Type": "Inner",
+                  "Startup Cost": 0.29,
+                  "Total Cost": 18686.75,
+                  "Plan Rows": 5248,
+                  "Plan Width": 0,
+                  "Inner Unique": true,
+                  "Plans": [
+                    {
+                      "Node Type": "Seq Scan",
+                      "Parent Relationship": "Outer",
+                      "Parallel Aware": true,
+                      "Async Capable": false,
+                      "Relation Name": "order_items",
+                      "Alias": "oi",
+                      "Startup Cost": 0.00,
+                      "Total Cost": 9371.86,
+                      "Plan Rows": 312386,
+                      "Plan Width": 8
+                    },
+                    {
+                      "Node Type": "Memoize",
+                      "Parent Relationship": "Inner",
+                      "Parallel Aware": false,
+                      "Async Capable": false,
+                      "Startup Cost": 0.29,
+                      "Total Cost": 0.31,
+                      "Plan Rows": 1,
+                      "Plan Width": 8,
+                      "Cache Key": "oi.product_id",
+                      "Cache Mode": "logical",
+                      "Plans": [
+                        {
+                          "Node Type": "Index Scan",
+                          "Parent Relationship": "Outer",
+                          "Parallel Aware": false,
+                          "Async Capable": false,
+                          "Scan Direction": "Forward",
+                          "Index Name": "products_pkey",
+                          "Relation Name": "products",
+                          "Alias": "p",
+                          "Startup Cost": 0.28,
+                          "Total Cost": 0.30,
+                          "Plan Rows": 1,
+                          "Plan Width": 8,
+                          "Index Cond": "(id = oi.product_id)",
+                          "Filter": "(category_id = 3)"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "Settings": {
+      "enable_hashjoin": "off",
+      "enable_mergejoin": "off"
+    }
+  }
+]

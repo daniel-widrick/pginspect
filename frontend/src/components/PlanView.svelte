@@ -1,9 +1,18 @@
 <script lang="ts">
+  import { tick } from 'svelte'
   import { ClipboardSetText } from '../../wailsjs/runtime/runtime'
-  import { toast, type QueryTab } from '../lib/state.svelte'
+  import { ResolveTables } from '../../wailsjs/go/main/App'
+  import type { db } from '../../wailsjs/go/models'
+  import { toast, serverMajor, type QueryTab } from '../lib/state.svelte'
   import { parsePlan, fmtMs, fmtNum, pct, detailEntries, type PlanNode, type ParsedPlan } from '../lib/plan'
+  import { analyzePlan, type Analysis } from '../lib/hints'
+  import { sqlFacts } from '../lib/sqlast'
+  import { parseSql, SqlSyntaxError } from '../lib/pgquery'
+  import { errorMessage } from '../lib/state.svelte'
   import PlanDiagram from './PlanDiagram.svelte'
   import JoinDiagram from './JoinDiagram.svelte'
+  import HintsPanel from './HintsPanel.svelte'
+  import Splitter from './Splitter.svelte'
 
   interface Props { tab: QueryTab }
   let { tab }: Props = $props()
@@ -12,12 +21,88 @@
   let expanded = $state<Record<number, boolean>>({})
   let collapsed = $state<Record<number, boolean>>({})
 
+  // The hints panel is open by default; its state is remembered between launches.
+  let showHints = $state(true)
+  let hintsWidth = $state(380)
+  try {
+    const saved = JSON.parse(localStorage.getItem('pginspect.hints') ?? '{}')
+    if (typeof saved.open === 'boolean') showHints = saved.open
+    if (typeof saved.width === 'number') hintsWidth = Math.max(240, Math.min(800, saved.width))
+  } catch { /* defaults */ }
+  function saveHints() {
+    try { localStorage.setItem('pginspect.hints', JSON.stringify({ open: showHints, width: hintsWidth })) } catch { /* ignore */ }
+  }
+  function toggleHints() { showHints = !showHints; saveHints() }
+
+  let analysis = $state<Analysis | null>(null)
+  let parseStatus = $state('')
+  /** Plan node a hint asked to show; drives selection in the diagram and the table. */
+  let focusId = $state<number | null>(null)
+
   const parsed = $derived.by((): { plan?: ParsedPlan; error?: string } => {
     if (!tab.plan?.plan) return {}
     try { return { plan: parsePlan(tab.plan.plan) } } catch (e) { return { error: String(e) } }
   })
 
-  $effect(() => { tab.plan; expanded = {}; collapsed = {} })
+  $effect(() => { tab.plan; expanded = {}; collapsed = {}; focusId = null })
+
+  // Analyse each new plan: resolve the tables it names, parse the statement,
+  // then run the rules. The parser is a lazily loaded wasm module.
+  $effect(() => {
+    const p = parsed.plan
+    const sql = tab.plan?.sql ?? ''
+    const connId = tab.connId
+    analysis = null
+    parseStatus = ''
+    if (!p) return
+    let stale = false
+    void (async () => {
+      let tables: db.TableColumns[] = []
+      const names = [...new Set(p.nodes.map(n => n.raw['Relation Name']).filter(Boolean))] as string[]
+      if (names.length) {
+        try { tables = await ResolveTables(connId, names) } catch { /* hints then work from the plan alone */ }
+      }
+      const columns = (schema: string | null, table: string) => {
+        const c = tables.filter(t => t.name === table && (!schema || t.schema === schema))
+        return c.length === 1 ? c[0].columns : undefined
+      }
+      const schemaOf = (table: string) => {
+        const c = tables.filter(t => t.name === table)
+        return c.length === 1 ? c[0].schema : null
+      }
+      let facts = null, status = ''
+      if (sql.trim()) {
+        try { facts = sqlFacts(await parseSql(sql), columns) }
+        catch (e) { status = e instanceof SqlSyntaxError ? `Statement text not parsed (${e.message} at ${e.position}); hints use the plan only.` : `Statement text not parsed (${errorMessage(e)}); hints use the plan only.` }
+      }
+      if (stale) return
+      analysis = analyzePlan(p, { facts, serverMajor: serverMajor(connId), schemaOf })
+      parseStatus = status
+    })()
+    return () => { stale = true }
+  })
+
+  const topSeverity = $derived(analysis?.hints[0]?.severity ?? null)
+
+  async function focusNode(id: number) {
+    focusId = id
+    if (mode === 'json' || mode === 'joins') mode = 'diagram'
+    if (mode === 'tree') {
+      // Unfold ancestors so the row exists, then scroll to it.
+      if (parsed.plan) {
+        const path = new Set<number>()
+        const find = (n: PlanNode, trail: number[]): boolean => {
+          if (n.id === id) { trail.forEach(t => path.add(t)); return true }
+          return n.children.some(c => find(c, [...trail, n.id]))
+        }
+        find(parsed.plan.root, [])
+        for (const a of path) collapsed[a] = false
+      }
+      expanded[id] = true
+      await tick()
+      document.getElementById(`plan-node-${id}`)?.scrollIntoView({ block: 'center' })
+    }
+  }
 
   /** Nodes in display order, skipping children of collapsed nodes. */
   const visible = $derived.by(() => {
@@ -79,20 +164,18 @@
       <button class="small" class:active={mode === 'tree'} onclick={() => (mode = 'tree')}>Table</button>
       <button class="small" class:active={mode === 'json'} onclick={() => (mode = 'json')}>JSON</button>
       <button class="small" onclick={copyJson}>Copy JSON</button>
+      <span class="sep"></span>
+      <button class="small hints-btn" class:active={showHints} onclick={toggleHints} title="Optimisation hints and row flow">
+        Hints{#if analysis}<span class="count {topSeverity ?? 'none'}">{analysis.hints.length}</span>{/if}
+      </button>
     </div>
 
-    {#if p.warnings.length}
-      <ul class="warnings">
-        {#each p.warnings as w}
-          <li><span class="wnode">{w.node.type}{w.node.detail ? ' ' + w.node.detail : ''}:</span> {w.text}</li>
-        {/each}
-      </ul>
-    {/if}
-
+    <div class="body">
+    <div class="main">
     {#if mode === 'json'}
       <pre class="json">{JSON.stringify(JSON.parse(tab.plan.plan), null, 2)}</pre>
     {:else if mode === 'diagram'}
-      <div class="diagram-pane"><PlanDiagram plan={p} title={tab.plan.analyze ? 'Executed plan' : 'Estimated plan'} /></div>
+      <div class="diagram-pane"><PlanDiagram plan={p} title={tab.plan.analyze ? 'Executed plan' : 'Estimated plan'} focus={focusId} /></div>
     {:else if mode === 'joins'}
       <div class="diagram-pane"><JoinDiagram plan={p} /></div>
     {:else}
@@ -107,7 +190,7 @@
         {#each visible as n (n.id)}
           {@const f = share(n, p)}
           <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-          <div class="row" class:open={expanded[n.id]} onclick={() => (expanded[n.id] = !expanded[n.id])} role="button" tabindex="-1">
+          <div class="row" id="plan-node-{n.id}" class:open={expanded[n.id]} class:focused={focusId === n.id} onclick={() => (expanded[n.id] = !expanded[n.id])} role="button" tabindex="-1">
             <span class="c-node" style="padding-left: {n.depth * 18}px">
               {#if n.children.length}
                 <button class="caret" onclick={(e) => { e.stopPropagation(); collapsed[n.id] = !collapsed[n.id] }} title={collapsed[n.id] ? 'Expand' : 'Collapse'}>
@@ -145,28 +228,45 @@
         <div class="settings muted">Non-default settings: {Object.entries(p.settings).map(([k, v]) => `${k} = ${v}`).join(', ')}</div>
       {/if}
     {/if}
+    </div>
+    {#if showHints}
+      <Splitter direction="horizontal" onDrag={(d) => { hintsWidth = Math.max(240, Math.min(800, hintsWidth - d)); saveHints() }} />
+      <div class="side" style="width: {hintsWidth}px">
+        <HintsPanel plan={p} {analysis} {parseStatus} focused={focusId} onFocus={focusNode} onClose={toggleHints} />
+      </div>
+    {/if}
+    </div>
   {/if}
 </div>
 
 <style>
-  .plan { height: 100%; overflow: auto; background: var(--bg); font-size: 12.5px; display: flex; flex-direction: column; }
+  .plan { height: 100%; overflow: hidden; background: var(--bg); font-size: 12.5px; display: flex; flex-direction: column; }
   .plan > :global(*) { flex-shrink: 0; }
+  .body { flex: 1 1 auto; min-height: 0; display: flex; }
+  .main { flex: 1 1 auto; min-width: 0; overflow: auto; display: flex; flex-direction: column; }
+  .main > :global(*) { flex-shrink: 0; }
+  .side { flex-shrink: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; border-left: 1px solid var(--border); }
+  .side > :global(*) { flex: 1; min-height: 0; }
   .diagram-pane { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .pad { padding: 16px; display: flex; gap: 8px; align-items: center; }
   .error-box { padding: 10px 14px; background: color-mix(in srgb, var(--danger) 8%, var(--bg)); }
-  .summary { display: flex; align-items: center; gap: 14px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg-2); position: sticky; top: 0; z-index: 2; }
+  .summary { display: flex; align-items: center; gap: 14px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg-2); }
+  .sep { width: 1px; height: 14px; background: var(--border); margin: 0 -6px; }
+  .hints-btn { display: inline-flex; align-items: center; gap: 6px; }
+  .count { font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 8px; background: var(--bg-3); color: var(--fg-2); }
+  .count.high { background: var(--danger); color: var(--accent-fg); }
+  .count.medium { background: var(--warn); color: var(--bg); }
+  .summary button.active .count { background: color-mix(in srgb, var(--accent-fg) 25%, transparent); color: var(--accent-fg); }
   .mode { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; padding: 2px 6px; border-radius: 3px; background: var(--bg-3); color: var(--fg-2); }
   .mode.analyze { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
   .grow { flex: 1; }
   .summary button.active { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
-  .warnings { margin: 0; padding: 8px 12px 8px 30px; background: color-mix(in srgb, var(--warn) 10%, var(--bg)); border-bottom: 1px solid var(--border); }
-  .warnings li { padding: 1px 0; }
-  .wnode { font-family: var(--font-mono); color: var(--fg-2); }
   .tree { padding-bottom: 12px; min-width: 760px; }
   .row { display: grid; grid-template-columns: minmax(300px, 1fr) 110px 90px 110px 220px; align-items: center; padding: 3px 12px; border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent); cursor: default; }
   .row:hover { background: var(--bg-hover); }
-  .row.head { position: sticky; top: 33px; background: var(--bg-2); font-size: 11px; color: var(--fg-2); font-weight: 600; z-index: 1; cursor: default; }
+  .row.head { position: sticky; top: 0; background: var(--bg-2); font-size: 11px; color: var(--fg-2); font-weight: 600; z-index: 1; cursor: default; }
   .row.open { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .row.focused { box-shadow: inset 3px 0 0 var(--accent); }
   .c-node { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; }
   .c-num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; padding-right: 8px; }
   .caret { width: 14px; border: none; background: transparent; padding: 0; color: var(--fg-3); font-size: 10px; text-align: left; flex-shrink: 0; }

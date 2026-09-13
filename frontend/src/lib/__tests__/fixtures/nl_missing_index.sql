@@ -1,0 +1,1 @@
+select count(*) from shop.products p join shop.order_items oi on oi.product_id = p.id where p.category_id = 3

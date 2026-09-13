@@ -1,0 +1,1 @@
+select * from shop.customers where email like '%user123%'

@@ -6,8 +6,8 @@
   import { fmtMs, fmtNum, pct, detailEntries, type ParsedPlan, type PlanNode } from '../lib/plan'
   import { errorMessage } from '../lib/state.svelte'
 
-  interface Props { plan: ParsedPlan; title: string }
-  let { plan, title }: Props = $props()
+  interface Props { plan: ParsedPlan; title: string; focus?: number | null }
+  let { plan, title, focus = null }: Props = $props()
 
   let svg = $state('')
   let error = $state('')
@@ -110,6 +110,38 @@
     const spec = buildSpec()
     selected = null
     RenderDiagram(spec as any, 'tree', title).then(s => { svg = s; error = '' }).catch(e => { error = errorMessage(e) })
+  })
+
+  // A hint asked for a node: unfold whatever hides it, select it, scroll to it.
+  let pendingFocus = $state<number | null>(null)
+  $effect(() => {
+    if (focus === null) return
+    const target = plan.nodes.find(n => n.id === focus)
+    if (!target) return
+    const hidden = new Set<number>()
+    const walk = (n: PlanNode, folded: boolean) => {
+      if (folded) hidden.add(n.id)
+      n.children.forEach(c => walk(c, folded || collapsed.has(n.id)))
+    }
+    walk(plan.root, false)
+    if (hidden.has(target.id)) {
+      const set = new Set(collapsed)
+      const unfold = (n: PlanNode, trail: PlanNode[]): boolean => {
+        if (n.id === target.id) { trail.forEach(t => set.delete(t.id)); return true }
+        return n.children.some(c => unfold(c, [...trail, n]))
+      }
+      unfold(plan.root, [])
+      collapsed = set
+    }
+    pendingFocus = target.id
+  })
+  $effect(() => {
+    if (pendingFocus === null || !host || !svg) return
+    const g = host.querySelector(`g.node[data-id="${pendingFocus}"]`)
+    if (!g) return
+    selected = plan.nodes.find(n => n.id === pendingFocus) ?? null
+    pendingFocus = null
+    g.scrollIntoView({ block: 'center', inline: 'center' })
   })
 
   function nodeAt(e: MouseEvent): PlanNode | null {

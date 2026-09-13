@@ -1,0 +1,49 @@
+[
+  {
+    "Plan": {
+      "Node Type": "Seq Scan",
+      "Parallel Aware": false,
+      "Async Capable": false,
+      "Relation Name": "customers",
+      "Alias": "customers",
+      "Startup Cost": 0.00,
+      "Total Cost": 1605.00,
+      "Plan Rows": 250,
+      "Plan Width": 102,
+      "Actual Startup Time": 15.106,
+      "Actual Total Time": 15.106,
+      "Actual Rows": 0,
+      "Actual Loops": 1,
+      "Filter": "(lower(email) = 'user1@example.com'::text)",
+      "Rows Removed by Filter": 50000,
+      "Shared Hit Blocks": 855,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Settings": {
+    },
+    "Planning": {
+      "Shared Hit Blocks": 95,
+      "Shared Read Blocks": 0,
+      "Shared Dirtied Blocks": 0,
+      "Shared Written Blocks": 0,
+      "Local Hit Blocks": 0,
+      "Local Read Blocks": 0,
+      "Local Dirtied Blocks": 0,
+      "Local Written Blocks": 0,
+      "Temp Read Blocks": 0,
+      "Temp Written Blocks": 0
+    },
+    "Planning Time": 0.303,
+    "Triggers": [
+    ],
+    "Execution Time": 15.149
+  }
+]

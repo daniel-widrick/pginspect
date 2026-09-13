@@ -153,6 +153,38 @@ func (s *Session) ListColumns(ctx context.Context, schema, name string) ([]Colum
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[ColumnInfo])
 }
 
+// TableColumns describes a relation found by bare name, for resolving the
+// tables a plan mentions to their schema and column list.
+type TableColumns struct {
+	Schema  string   `json:"schema"`
+	Name    string   `json:"name"`
+	Columns []string `json:"columns"`
+}
+
+// ResolveTables finds every relation with one of the given names, in any
+// schema the user can see, with its columns. A name that appears in more
+// than one schema comes back more than once.
+func (s *Session) ResolveTables(ctx context.Context, names []string) ([]TableColumns, error) {
+	rows, err := s.pool.Query(ctx, `
+		select n.nspname, c.relname,
+		       coalesce((select array_agg(a.attname::text order by a.attnum)
+		                 from pg_catalog.pg_attribute a
+		                 where a.attrelid = c.oid and a.attnum > 0 and not a.attisdropped), '{}')
+		from pg_catalog.pg_class c
+		join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+		where c.relname = any($1) and c.relkind in ('r', 'p', 'v', 'm', 'f')
+		  and n.nspname not in ('pg_catalog', 'information_schema') and n.nspname not like 'pg_toast%'
+		order by n.nspname, c.relname`, names)
+	if err != nil {
+		return nil, err
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[TableColumns])
+	if out == nil {
+		out = []TableColumns{}
+	}
+	return out, err
+}
+
 // RelationInfo gathers columns, indexes, constraints and a DDL rendering.
 func (s *Session) RelationInfo(ctx context.Context, schema, name string) (RelationInfo, error) {
 	var info RelationInfo

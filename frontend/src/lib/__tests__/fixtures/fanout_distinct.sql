@@ -1,0 +1,1 @@
+select distinct c.id, c.email from shop.customers c join shop.orders o on o.customer_id = c.id join shop.order_items oi on oi.order_id = o.id where c.country = 'DE'

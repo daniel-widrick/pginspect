@@ -1,0 +1,1 @@
+select * from shop.orders where placed_at::date = '2025-06-01'
