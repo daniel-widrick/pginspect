@@ -62,6 +62,8 @@ export interface SlowLogTab {
   minMs: number
   maxBytes: number
   expanded: number | null
+  sortKey: string
+  sortDesc: boolean
 }
 
 export type Tab = QueryTab | StructureTab | StatsTab | SlowLogTab

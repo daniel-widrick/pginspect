@@ -87,6 +87,7 @@ export async function openSlowLogTab(connId: string): Promise<void> {
   const tab: SlowLogTab = {
     kind: 'slowlog', id: nextId(), title: 'Slow log', connId,
     data: null, error: '', loading: false, filter: '', minMs: 0, maxBytes: 8 * 1024 * 1024, expanded: null,
+    sortKey: 'time', sortDesc: true,
   }
   store.tabs.push(tab)
   store.activeTabId = tab.id

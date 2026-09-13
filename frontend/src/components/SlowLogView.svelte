@@ -13,11 +13,42 @@
   /** Parse and bind phases are logged separately but say nothing about the execution. */
   let showPhases = $state(false)
 
+  type Key = 'time' | 'durationMs' | 'who' | 'query' | 'params' | 'queryId'
+  const columns: { key: Key; label: string; cls: string }[] = [
+    { key: 'time', label: 'When', cls: '' },
+    { key: 'durationMs', label: 'Duration', cls: 'n' },
+    { key: 'who', label: 'Who', cls: '' },
+    { key: 'query', label: 'Statement', cls: 'q' },
+    { key: 'params', label: 'Values', cls: 'n' },
+    { key: 'queryId', label: 'Query id', cls: '' },
+  ]
+  function sortValue(e: db.SlowLogEntry, k: Key): number | string {
+    switch (k) {
+      case 'time': return new Date(e.time as any).getTime()
+      case 'durationMs': return e.durationMs
+      case 'who': return `${e.user}@${e.database}`
+      case 'query': return e.query
+      case 'params': return Object.keys(e.params ?? {}).length
+      case 'queryId': return e.queryId
+    }
+  }
+  function sortBy(k: Key) {
+    if (tab.sortKey === k) tab.sortDesc = !tab.sortDesc
+    else { tab.sortKey = k; tab.sortDesc = k === 'time' || k === 'durationMs' || k === 'params' }
+    tab.expanded = null
+  }
+
   const rows = $derived.by(() => {
     const list = tab.data?.entries ?? []
     const f = tab.filter.trim().toLowerCase()
-    return list.filter(e => (showPhases || e.command === 'statement' || e.command === 'execute')
+    const filtered = list.filter(e => (showPhases || e.command === 'statement' || e.command === 'execute')
       && e.durationMs >= tab.minMs && (!f || e.query.toLowerCase().includes(f) || e.user.toLowerCase().includes(f) || e.app.toLowerCase().includes(f) || e.queryId === f))
+    const k = tab.sortKey as Key
+    const dir = tab.sortDesc ? -1 : 1
+    return [...filtered].sort((a, b) => {
+      const x = sortValue(a, k), y = sortValue(b, k)
+      return dir * (x < y ? -1 : x > y ? 1 : 0)
+    })
   })
 
   function oneLine(q: string): string {
@@ -99,7 +130,15 @@ GRANT pg_monitor TO {'{'}role{'}'};              # lets pginspect list and read 
     {/if}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>When</th><th class="n">Duration</th><th>Who</th><th class="q">Statement</th><th class="n">Values</th><th>Query id</th></tr></thead>
+        <thead>
+          <tr>
+            {#each columns as c}
+              <th class="{c.cls} sortable" onclick={() => sortBy(c.key)} title="Sort by {c.label.toLowerCase()}">
+                {c.label}{#if tab.sortKey === c.key}<span class="sort">{tab.sortDesc ? '▼' : '▲'}</span>{/if}
+              </th>
+            {/each}
+          </tr>
+        </thead>
         <tbody>
           {#each rows as e, i (i)}
             {@const nparams = Object.keys(e.params ?? {}).length}
@@ -159,6 +198,9 @@ GRANT pg_monitor TO {'{'}role{'}'};              # lets pginspect list and read 
   table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12px; }
   th, td { padding: 4px 8px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
   th { position: sticky; top: 0; background: var(--bg-2); font-weight: 600; font-size: 11px; color: var(--fg-2); z-index: 1; }
+  th.sortable { cursor: pointer; user-select: none; }
+  th.sortable:hover { background: var(--bg-hover); }
+  .sort { color: var(--accent); font-size: 9px; margin-left: 3px; }
   td.q, th.q { max-width: 0; width: 55%; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); cursor: default; }
   .cmd { font-size: 10px; text-transform: uppercase; color: var(--fg-3); margin-right: 4px; }
   td.n, th.n { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
