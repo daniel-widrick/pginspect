@@ -6,8 +6,16 @@ export function ActivitySampling(arg1) {
   return window['go']['main']['App']['ActivitySampling'](arg1);
 }
 
+export function ApplyUpdate() {
+  return window['go']['main']['App']['ApplyUpdate']();
+}
+
 export function CancelQuery(arg1, arg2) {
   return window['go']['main']['App']['CancelQuery'](arg1, arg2);
+}
+
+export function CheckForUpdate(arg1) {
+  return window['go']['main']['App']['CheckForUpdate'](arg1);
 }
 
 export function ConfigDir() {
@@ -90,6 +98,10 @@ export function SaveProfile(arg1, arg2) {
   return window['go']['main']['App']['SaveProfile'](arg1, arg2);
 }
 
+export function SkipUpdate(arg1) {
+  return window['go']['main']['App']['SkipUpdate'](arg1);
+}
+
 export function SlowLog(arg1, arg2, arg3) {
   return window['go']['main']['App']['SlowLog'](arg1, arg2, arg3);
 }
@@ -112,6 +124,10 @@ export function StopActivitySampling(arg1) {
 
 export function TestConnection(arg1, arg2) {
   return window['go']['main']['App']['TestConnection'](arg1, arg2);
+}
+
+export function UpdateStatus() {
+  return window['go']['main']['App']['UpdateStatus']();
 }
 
 export function Version() {

@@ -16,6 +16,7 @@
   import PasswordDialog from './components/PasswordDialog.svelte'
   import ParamsDialog from './components/ParamsDialog.svelte'
   import Splitter from './components/Splitter.svelte'
+  import UpdateBanner from './components/UpdateBanner.svelte'
 
   let editor = $state<Editor>()
   let grid = $state<ResultsGrid>()
@@ -84,6 +85,7 @@
   <Splitter direction="horizontal" onDrag={(d) => (store.sidebarWidth = Math.max(180, Math.min(600, store.sidebarWidth + d)))} />
 
   <main bind:this={mainEl}>
+    <UpdateBanner />
     <div class="tabbar">
       {#each store.tabs as t (t.id)}
         <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions, a11y_no_static_element_interactions -->

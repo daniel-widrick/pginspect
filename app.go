@@ -19,6 +19,7 @@ import (
 
 	"pginspect/internal/config"
 	"pginspect/internal/db"
+	"pginspect/internal/update"
 )
 
 // ErrPasswordRequired is the exact string the frontend checks for to open a
@@ -27,9 +28,10 @@ const ErrPasswordRequired = "PASSWORD_REQUIRED"
 
 // App holds the state exposed to the frontend through Wails bindings.
 type App struct {
-	ctx   context.Context
-	store *config.Store
-	conns *db.Manager
+	ctx     context.Context
+	store   *config.Store
+	conns   *db.Manager
+	updater *update.Updater
 }
 
 // NewApp creates a new App application struct.
@@ -45,6 +47,19 @@ func (a *App) startup(ctx context.Context) {
 		return
 	}
 	a.store = store
+
+	// Self-update: clean up a previous version, then check weekly in the
+	// background; the UI is told through "update:status" events.
+	update.Cleanup()
+	a.updater = update.New("daniel-widrick/pginspect", version, store.Dir())
+	a.updater.OnChange = func(st update.Status) { runtime.EventsEmit(ctx, "update:status", st) }
+	if a.updater.Due() {
+		go func() {
+			cctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			_, _ = a.updater.Check(cctx, false)
+		}()
+	}
 }
 
 func (a *App) shutdown(ctx context.Context) {
@@ -392,6 +407,49 @@ func (a *App) ExportCSV(columns []string, rows [][]*string, suggestedName string
 	}
 	w.Flush()
 	return path, w.Error()
+}
+
+// UpdateStatus reports the self-updater's state.
+func (a *App) UpdateStatus() update.Status {
+	if a.updater == nil {
+		return update.Status{Current: version, State: "unsupported"}
+	}
+	return a.updater.Status()
+}
+
+// CheckForUpdate asks GitHub for a newer release now. With force, a version
+// the user skipped is offered again.
+func (a *App) CheckForUpdate(force bool) (update.Status, error) {
+	if a.updater == nil {
+		return update.Status{Current: version, State: "unsupported"}, nil
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Second)
+	defer cancel()
+	return a.updater.Check(ctx, force)
+}
+
+// SkipUpdate hides the offered version until a newer one appears.
+func (a *App) SkipUpdate(tag string) {
+	if a.updater != nil {
+		a.updater.Skip(tag)
+	}
+}
+
+// ApplyUpdate downloads, verifies and installs the offered release, starts
+// the new version and quits this one.
+func (a *App) ApplyUpdate() error {
+	if a.updater == nil {
+		return fmt.Errorf("this build cannot update itself")
+	}
+	if err := a.updater.Apply(a.ctx); err != nil {
+		return err
+	}
+	a.conns.CloseAll()
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		runtime.Quit(a.ctx)
+	}()
+	return nil
 }
 
 // Version returns the build version ("dev" for local builds).

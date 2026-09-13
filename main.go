@@ -46,6 +46,11 @@ func main() {
 	tools.AddText("Query Statistics", keys.Combo("p", keys.CmdOrCtrlKey, keys.ShiftKey), emit("stats"))
 	tools.AddText("Slow Statement Log", keys.Combo("l", keys.CmdOrCtrlKey, keys.ShiftKey), emit("slowlog"))
 	appMenu.Append(menu.WindowMenu())
+	help := appMenu.AddSubmenu("Help")
+	help.AddText("Check for Updates...", nil, emit("checkupdate"))
+	help.AddText("pginspect on GitHub", nil, func(*menu.CallbackData) {
+		runtime.BrowserOpenURL(app.ctx, "https://github.com/daniel-widrick/pginspect")
+	})
 
 	err := wails.Run(&options.App{
 		Title:     "pginspect " + version,
