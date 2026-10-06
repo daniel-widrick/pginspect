@@ -1,0 +1,67 @@
+# Code scan on every pull request and push to main: Semgrep, Trivy, Gitleaks,
+# Lizard, jscpd, scc, Go coverage and organization checks, consolidated into
+# one report posted as a PR comment.
+#
+# GitHub stays the home of CI and releases (.github/workflows); this runs on
+# the Forgejo mirror, where the scanner lives.
+name: Code scan
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0   # full history for Gitleaks and for diffing against the PR base
+
+      # v5, not v6: setup-go v6 declares runs.using node24, which the local
+      # runner (v6.3.1) does not support yet.
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Start PostgreSQL
+        # The job container runs with host networking, so a sibling container
+        # publishing 5433 is reachable on localhost, which is where the
+        # database tests look. Without it they skip and internal/db reads as
+        # untested, so this step is allowed to fail rather than block the scan.
+        continue-on-error: true
+        run: |
+          docker rm -f pg >/dev/null 2>&1 || true
+          docker run -d --name pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=inspect \
+            -p 5433:5432 postgres:17 -c shared_preload_libraries=pg_stat_statements -c pg_stat_statements.track=all
+          # The image's bootstrap server answers pg_isready before the real one
+          # is up and the database exists, so wait for an actual query.
+          for i in $(seq 1 60); do docker exec pg psql -U postgres -d inspect -Atc 'select 1' >/dev/null 2>&1 && break; sleep 1; done
+          docker exec -i pg psql -q -v ON_ERROR_STOP=1 -U postgres -d inspect < testdata/test-schema.sql
+
+      - name: Go tests with coverage
+        run: go test ./... -coverprofile=coverage.out -coverpkg=./...
+        continue-on-error: true   # a failing test must not hide the scan
+
+      - name: Stop PostgreSQL
+        if: always()
+        run: docker rm -f pg >/dev/null 2>&1 || true
+
+      - name: Scan
+        id: scan
+        # Self-hosted and released by moving the v1 tag on purpose, so each
+        # scanner release is picked up without a workflow edit. The
+        # third-party actions above are pinned to commits instead.
+        uses: https://git.home.widrick.net/lvlint67/forgejo-secscan@v1 # nosemgrep: yaml.github-actions.security.github-actions-mutable-action-tag.github-actions-mutable-action-tag
+        with:
+          coverage-files: coverage.out
+          fail-on: high
+
+      - name: Upload report
+        if: always()
+        uses: https://code.forgejo.org/forgejo/upload-artifact@16871d9e8cfcf27ff31822cac382bbb5450f1e1e # v4
+        with:
+          name: secscan-report
+          path: secscan-report
