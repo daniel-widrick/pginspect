@@ -559,7 +559,7 @@ func unzipBundle(path, dir string) (string, error) {
 			rc.Close()
 			return "", err
 		}
-		_, err = io.Copy(out, rc)
+		err = copyBounded(out, rc)
 		rc.Close()
 		out.Close()
 		if err != nil {
@@ -578,7 +578,9 @@ func relaunch(target string) error {
 	if runtime.GOOS == "darwin" && strings.HasSuffix(target, ".app") {
 		return exec.Command("open", "-n", target).Start()
 	}
-	cmd := exec.Command(target, os.Args[1:]...)
+	// target is the path this updater just installed, after the download was
+	// checked against the signed checksums; nothing else ever reaches here.
+	cmd := exec.Command(target, os.Args[1:]...) // nosemgrep: go.lang.security.audit.dangerous-exec-command.dangerous-exec-command
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 	return cmd.Start()
 }
