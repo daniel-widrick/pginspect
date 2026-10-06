@@ -18,6 +18,10 @@ jobs:
   build:
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
+    # GitHub only. The Forgejo mirror also reads this directory and would
+    # run the job on a runner these actions do not support; its own
+    # workflow lives in .forgejo/workflows.
+    if: github.server_url == 'https://github.com'
     strategy:
       fail-fast: false
       matrix:
@@ -35,11 +39,11 @@ jobs:
             platform: linux/amd64
             artifact: pginspect-linux-amd64.tar.gz
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         with:
           node-version: 22
           cache: npm
@@ -84,7 +88,7 @@ jobs:
           esac
           ls -la dist
 
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}
@@ -100,12 +104,16 @@ jobs:
     name: Checksums and signature
     needs: build
     runs-on: ubuntu-latest
+    # GitHub only. The Forgejo mirror also reads this directory and would
+    # run the job on a runner these actions do not support; its own
+    # workflow lives in .forgejo/workflows.
+    if: github.server_url == 'https://github.com'
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-go@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
-      - uses: actions/download-artifact@v5
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           path: dist
           merge-multiple: true
@@ -118,7 +126,7 @@ jobs:
           cat checksums.txt
           cd ..
           go run ./cmd/relsign dist/checksums.txt
-      - uses: actions/upload-artifact@v5
+      - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: checksums
           path: |

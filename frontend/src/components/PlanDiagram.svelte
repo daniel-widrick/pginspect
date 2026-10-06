@@ -222,8 +222,12 @@
     {:else if !svg}
       <div class="muted pad">Laying out...</div>
     {:else}
+      <!-- The SVG comes from the Go diagram renderer, which escapes every
+           label it writes, so the plan text in it cannot carry markup. -->
+      <!-- eslint-disable svelte/no-at-html-tags -->
       <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
       <div class="canvas" bind:this={host} style="transform: scale({zoom})" onclick={onClick} ondblclick={onDblClick}>{@html svg}</div>
+      <!-- eslint-enable svelte/no-at-html-tags -->
     {/if}
   </div>
   {#if selected}
