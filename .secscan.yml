@@ -1,0 +1,6 @@
+# Repository config for the code scan workflow. Keys mirror the action inputs.
+
+# frontend/wailsjs holds the bindings Wails generates from the Go side on
+# every build. They are not written by hand, so nothing in them is worth
+# reporting. (node_modules, dist and build are excluded by default.)
+exclude: wailsjs
