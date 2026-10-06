@@ -89,66 +89,70 @@
     return null
   }
 
+  /** One diagram node per scanned table: name, how it was read, how much it cost. */
+  function tableNode(t: Table) {
+    const n = t.node
+    const f = share(n)
+    const how = n.raw['Index Name'] ? `${n.type} · ${n.raw['Index Name']}` : n.type
+    const rows = n.actualRows !== null ? `${fmtNum(n.actualRows * n.loops)} rows` : `est ${fmtNum(n.planRows)} rows`
+    const lines: { text: string; style: string }[][] = [
+      [{ text: t.name, style: 'title' }, ...(t.alias !== t.name ? [{ text: ` ${t.alias}`, style: 'muted' }] : [])],
+      [{ text: how, style: 'detail' }],
+      [{ text: `${rows}${plan.analyze ? ` · ${fmtMs(n.exclTime)} · ${pct(f)}` : ` · ${pct(f)} of cost`}`, style: 'muted' }],
+    ]
+    if (n.raw['Filter']) lines.push([{ text: `filter ${n.raw['Filter']}`, style: 'detail' }])
+    return { id: t.id, kind: f >= 0.5 ? 'hot' : n.warnings.length ? 'warm' : '', bar: f, maxWidth: 280, overflow: 'ellipsize', lines }
+  }
+
+  /** The join conditions a join node carries, including ones a nested loop pushed into its inner scan. */
+  function joinConditions(j: PlanNode): string[] {
+    const conds: string[] = []
+    for (const k of ['Hash Cond', 'Merge Cond', 'Join Filter']) if (j.raw[k]) conds.push(String(j.raw[k]))
+    const walk = (m: PlanNode) => {
+      for (const k of ['Index Cond', 'Recheck Cond', 'Filter']) if (m.raw[k] && pairs(String(m.raw[k])).length) conds.push(String(m.raw[k]))
+      m.children.forEach(walk)
+    }
+    if (j.children[1]) walk(j.children[1])
+    return conds
+  }
+
+  /** An edge between two tables, drawn weak when one side is an expensive sequential scan. */
+  function joinEdge(j: PlanNode, a: Table, b: Table, text: string) {
+    const innerSeq = [a, b].some(t => t.node.type === 'Seq Scan' && share(t.node) >= 0.2)
+    return { from: a.id, to: b.id, label: `${j.type.replace(' Join', '').toLowerCase()} · ${text}`, arrow: 'none', kind: innerSeq ? 'weak' : '' }
+  }
+
   function buildSpec() {
     const ts = tables()
     const byAlias = new Map(ts.map(t => [t.alias, t]))
-    const nodes = ts.map(t => {
-      const n = t.node
-      const f = share(n)
-      const how = n.raw['Index Name'] ? `${n.type} · ${n.raw['Index Name']}` : n.type
-      const rows = n.actualRows !== null ? `${fmtNum(n.actualRows * n.loops)} rows` : `est ${fmtNum(n.planRows)} rows`
-      const lines: { text: string; style: string }[][] = [
-        [{ text: t.name, style: 'title' }, ...(t.alias !== t.name ? [{ text: ` ${t.alias}`, style: 'muted' }] : [])],
-        [{ text: how, style: 'detail' }],
-        [{ text: `${rows}${plan.analyze ? ` · ${fmtMs(n.exclTime)} · ${pct(f)}` : ` · ${pct(f)} of cost`}`, style: 'muted' }],
-      ]
-      if (n.raw['Filter']) lines.push([{ text: `filter ${n.raw['Filter']}`, style: 'detail' }])
-      return { id: t.id, kind: f >= 0.5 ? 'hot' : n.warnings.length ? 'warm' : '', bar: f, maxWidth: 280, overflow: 'ellipsize', lines }
-    })
+    const nodes = ts.map(tableNode)
     const edges: any[] = []
     const seen = new Set<string>()
     const newNotes: string[] = []
+    // Each distinct table pair and condition is drawn once.
+    const addEdge = (j: PlanNode, a: Table, b: Table, text: string) => {
+      const key = [a.id, b.id].sort().join('|') + text
+      if (seen.has(key)) return
+      seen.add(key)
+      edges.push(joinEdge(j, a, b, text))
+    }
     for (const j of plan.nodes) {
       if (!joinTypes.has(j.type)) continue
-      const conds: string[] = []
-      for (const k of ['Hash Cond', 'Merge Cond', 'Join Filter']) if (j.raw[k]) conds.push(String(j.raw[k]))
-      // Nested loops push the condition into the inner scan's Index Cond or Filter.
-      if (j.children[1]) {
-        const inner = j.children[1]
-        const walk = (m: PlanNode) => {
-          for (const k of ['Index Cond', 'Recheck Cond', 'Filter']) if (m.raw[k] && pairs(String(m.raw[k])).length) conds.push(String(m.raw[k]))
-          m.children.forEach(walk)
+      const before = edges.length
+      for (const cond of joinConditions(j)) {
+        for (const [a, b] of pairs(cond)) {
+          const ta = byAlias.get(a), tb = byAlias.get(b)
+          if (ta && tb) addEdge(j, ta, tb, cond)
         }
-        walk(inner)
       }
       const left = scansUnder(j.children[0], ts)
       const right = j.children[1] ? scansUnder(j.children[1], ts) : []
-      let added = 0
-      for (const cond of conds) {
-        for (const [a, b] of pairs(cond)) {
-          const ta = byAlias.get(a), tb = byAlias.get(b)
-          if (!ta || !tb) continue
-          const key = [ta.id, tb.id].sort().join('|') + cond
-          if (seen.has(key)) continue
-          seen.add(key)
-          const innerSeq = [ta, tb].some(t => t.node.type === 'Seq Scan' && share(t.node) >= 0.2)
-          edges.push({ from: ta.id, to: tb.id, label: `${j.type.replace(' Join', '').toLowerCase()} · ${cond}`, arrow: 'none', kind: innerSeq ? 'weak' : '' })
-          added++
-        }
-      }
-      if (added === 0 && left.length && right.length) {
-        const folded = foldedJoin(left, right)
-        if (folded) {
-          const key = [folded.a.id, folded.b.id].sort().join('|') + folded.text
-          if (!seen.has(key)) {
-            seen.add(key)
-            const innerSeq = [folded.a, folded.b].some(t => t.node.type === 'Seq Scan' && share(t.node) >= 0.2)
-            edges.push({ from: folded.a.id, to: folded.b.id, label: `${j.type.replace(' Join', '').toLowerCase()} · ${folded.text}`, arrow: 'none', kind: innerSeq ? 'weak' : '' })
-          }
-        } else {
-          edges.push({ from: left[0].id, to: right[0].id, label: `${j.type} · no join condition`, arrow: 'none', kind: 'weak' })
-          newNotes.push(`${j.type} without a usable equality condition between ${left[0].alias} and ${right[0].alias}`)
-        }
+      if (edges.length > before || !left.length || !right.length) continue
+      const folded = foldedJoin(left, right)
+      if (folded) addEdge(j, folded.a, folded.b, folded.text)
+      else {
+        edges.push({ from: left[0].id, to: right[0].id, label: `${j.type} · no join condition`, arrow: 'none', kind: 'weak' })
+        newNotes.push(`${j.type} without a usable equality condition between ${left[0].alias} and ${right[0].alias}`)
       }
     }
     notes = newNotes
