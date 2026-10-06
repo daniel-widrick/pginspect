@@ -3,3 +3,6 @@ node_modules
 frontend/dist/*
 !frontend/dist/.gitkeep
 .DS_Store
+# produced by the test step and the code scan on the Forgejo runner
+coverage.out
+secscan-report/

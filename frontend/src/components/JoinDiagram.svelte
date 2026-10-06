@@ -186,6 +186,9 @@
     {:else if !svg}
       <div class="muted pad">Laying out...</div>
     {:else}
+      <!-- The SVG comes from the Go diagram renderer, which escapes every
+           label it writes, so the plan text in it cannot carry markup. -->
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
       <div class="canvas" bind:this={host} style="transform: scale({zoom})">{@html svg}</div>
     {/if}
     {#if notes.length}
