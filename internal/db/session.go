@@ -162,6 +162,22 @@ func (s *Session) Cancel(queryID string) bool {
 	return ok
 }
 
+// track makes a query cancellable by its ID for as long as it runs. The
+// returned function must be deferred: it forgets the ID and releases the
+// context.
+func (s *Session) track(ctx context.Context, queryID string) (context.Context, func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	s.mu.Lock()
+	s.running[queryID] = cancel
+	s.mu.Unlock()
+	return ctx, func() {
+		s.mu.Lock()
+		delete(s.running, queryID)
+		s.mu.Unlock()
+		cancel()
+	}
+}
+
 // RunQuery executes a script using the simple query protocol, so it may hold
 // several statements. Values come back as the server's text form. At most
 // maxRows rows per result are kept. For a single plain SELECT the statement
@@ -172,16 +188,8 @@ func (s *Session) RunQuery(ctx context.Context, queryID, sql string, maxRows int
 	if maxRows <= 0 {
 		maxRows = 1000
 	}
-	ctx, cancel := context.WithCancel(ctx)
-	s.mu.Lock()
-	s.running[queryID] = cancel
-	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		delete(s.running, queryID)
-		s.mu.Unlock()
-		cancel()
-	}()
+	ctx, done := s.track(ctx, queryID)
+	defer done()
 
 	start := time.Now()
 	resp := QueryResponse{Results: []Result{}}
@@ -294,36 +302,12 @@ type ExplainResponse struct {
 // statement may contain $1-style parameters and is planned without values
 // (PostgreSQL 16 or newer); analyze and generic are mutually exclusive.
 func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze, generic bool, timeoutMs int) ExplainResponse {
-	stmt := strings.TrimSpace(sql)
-	stmt = strings.TrimRight(stmt, "; \t\r\n")
-	if stmt == "" {
-		return ExplainResponse{Error: "nothing to explain"}
+	stmt, script, err := explainScript(sql, analyze, generic)
+	if err != nil {
+		return ExplainResponse{Error: err.Error()}
 	}
-	if analyze && generic {
-		return ExplainResponse{Error: "a generic plan cannot be combined with ANALYZE"}
-	}
-	opts := "FORMAT JSON, COSTS, SETTINGS"
-	if analyze {
-		opts = "ANALYZE, BUFFERS, TIMING, " + opts
-	}
-	if generic {
-		opts = "GENERIC_PLAN, " + opts
-	}
-	script := "EXPLAIN (" + opts + ")\n" + stmt
-	if analyze {
-		script = "BEGIN;\n" + script + ";\nROLLBACK;"
-	}
-
-	ctx, cancel := context.WithCancel(ctx)
-	s.mu.Lock()
-	s.running[queryID] = cancel
-	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		delete(s.running, queryID)
-		s.mu.Unlock()
-		cancel()
-	}()
+	ctx, done := s.track(ctx, queryID)
+	defer done()
 
 	start := time.Now()
 	out := ExplainResponse{Analyze: analyze, Generic: generic, SQL: stmt}
@@ -365,21 +349,56 @@ func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze, gen
 	if err != nil {
 		return finish(err)
 	}
-	for _, r := range resp.Results {
-		if len(r.Columns) == 1 && r.Columns[0].Name == "QUERY PLAN" {
-			var b strings.Builder
-			for _, row := range r.Rows {
-				if row[0] != nil {
-					b.WriteString(*row[0])
-				}
-			}
-			out.Plan = b.String()
-		}
-	}
+	out.Plan = planText(resp)
 	if out.Plan == "" {
 		return finish(errors.New("server returned no plan"))
 	}
 	return finish(nil)
+}
+
+// explainScript turns the user's statement into the EXPLAIN script to run,
+// and returns the trimmed statement so the response can echo it. The options
+// are fixed by the two switches; ANALYZE runs inside a transaction that the
+// script itself rolls back, so explaining a write leaves no trace.
+func explainScript(sql string, analyze, generic bool) (stmt, script string, err error) {
+	stmt = strings.TrimRight(strings.TrimSpace(sql), "; \t\r\n")
+	if stmt == "" {
+		return "", "", errors.New("nothing to explain")
+	}
+	if analyze && generic {
+		return "", "", errors.New("a generic plan cannot be combined with ANALYZE")
+	}
+	opts := "FORMAT JSON, COSTS, SETTINGS"
+	if analyze {
+		opts = "ANALYZE, BUFFERS, TIMING, " + opts
+	}
+	if generic {
+		opts = "GENERIC_PLAN, " + opts
+	}
+	script = "EXPLAIN (" + opts + ")\n" + stmt
+	if analyze {
+		script = "BEGIN;\n" + script + ";\nROLLBACK;"
+	}
+	return stmt, script, nil
+}
+
+// planText joins the QUERY PLAN rows of a script's results into the JSON the
+// server produced, or returns "" when no result carried a plan.
+func planText(resp QueryResponse) string {
+	var plan string
+	for _, r := range resp.Results {
+		if len(r.Columns) != 1 || r.Columns[0].Name != "QUERY PLAN" {
+			continue
+		}
+		var b strings.Builder
+		for _, row := range r.Rows {
+			if row[0] != nil {
+				b.WriteString(*row[0])
+			}
+		}
+		plan = b.String()
+	}
+	return plan
 }
 
 // typeName resolves an OID to a type name, using pgx's registry first and
