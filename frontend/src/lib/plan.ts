@@ -109,25 +109,35 @@ function role(raw: any): string {
   return ''
 }
 
+// Each builder contributes one fragment of a node's one-line description, or
+// nothing. Order is display order, except Operation which leads.
+const describers: ((raw: any) => string | null)[] = [
+  raw => raw['Index Name'] ? `using ${raw['Index Name']}` : null,
+  raw => {
+    const rel = raw['Relation Name']
+    if (rel) {
+      const alias = raw['Alias'] && raw['Alias'] !== rel ? ` as ${raw['Alias']}` : ''
+      return `on ${raw['Schema'] ? raw['Schema'] + '.' : ''}${rel}${alias}`
+    }
+    return raw['Alias'] && !['Hash', 'Sort', 'Limit'].includes(raw['Node Type'] ?? '') ? raw['Alias'] : null
+  },
+  raw => raw['CTE Name'] ? `cte ${raw['CTE Name']}` : null,
+  raw => raw['Function Name'] ?? null,
+  raw => raw['Join Type'] && raw['Join Type'] !== 'Inner' ? raw['Join Type'].toLowerCase() : null,
+  raw => raw['Strategy'] && raw['Strategy'] !== 'Plain' ? raw['Strategy'].toLowerCase() : null,
+  raw => raw['Partial Mode'] && raw['Partial Mode'] !== 'Simple' ? raw['Partial Mode'].toLowerCase() : null,
+  raw => raw['Sort Key'] ? `by ${asList(raw['Sort Key'])}` : null,
+  raw => raw['Group Key'] ? `by ${asList(raw['Group Key'])}` : null,
+  raw => {
+    if (raw['Workers Launched'] !== undefined) return `${raw['Workers Launched']}/${raw['Workers Planned']} workers`
+    return raw['Workers Planned'] !== undefined ? `${raw['Workers Planned']} workers` : null
+  },
+  raw => raw['Scan Direction'] === 'Backward' ? 'backward' : null,
+]
+
 function describe(raw: any): string {
-  const t: string = raw['Node Type'] ?? ''
-  const rel = raw['Relation Name']
-  const alias = raw['Alias'] && raw['Alias'] !== rel ? ` as ${raw['Alias']}` : ''
-  const parts: string[] = []
-  if (raw['Index Name']) parts.push(`using ${raw['Index Name']}`)
-  if (rel) parts.push(`on ${raw['Schema'] ? raw['Schema'] + '.' : ''}${rel}${alias}`)
-  else if (raw['Alias'] && !['Hash', 'Sort', 'Limit'].includes(t)) parts.push(raw['Alias'])
-  if (raw['CTE Name']) parts.push(`cte ${raw['CTE Name']}`)
-  if (raw['Function Name']) parts.push(raw['Function Name'])
-  if (raw['Join Type'] && raw['Join Type'] !== 'Inner') parts.push(raw['Join Type'].toLowerCase())
-  if (raw['Strategy'] && raw['Strategy'] !== 'Plain') parts.push(raw['Strategy'].toLowerCase())
-  if (raw['Partial Mode'] && raw['Partial Mode'] !== 'Simple') parts.push(raw['Partial Mode'].toLowerCase())
+  const parts = describers.map(d => d(raw)).filter((p): p is string => p !== null)
   if (raw['Operation']) parts.unshift(raw['Operation'].toLowerCase())
-  if (raw['Sort Key']) parts.push(`by ${asList(raw['Sort Key'])}`)
-  if (raw['Group Key']) parts.push(`by ${asList(raw['Group Key'])}`)
-  if (raw['Workers Launched'] !== undefined) parts.push(`${raw['Workers Launched']}/${raw['Workers Planned']} workers`)
-  else if (raw['Workers Planned'] !== undefined) parts.push(`${raw['Workers Planned']} workers`)
-  if (raw['Scan Direction'] === 'Backward') parts.push('backward')
   return parts.join(' ')
 }
 
@@ -135,30 +145,37 @@ function asList(v: any): string {
   return Array.isArray(v) ? v.join(', ') : String(v)
 }
 
-function warn(n: PlanNode): string[] {
-  const r = n.raw
-  const out: string[] = []
-  if (n.actualRows !== null) {
+// Each check reads one symptom off a node and words it for the tree view.
+const warnChecks: ((n: PlanNode, r: Record<string, any>, sofar: string[]) => string | null)[] = [
+  n => {
+    if (n.actualRows === null) return null
     const est = Math.max(n.planRows, 1)
     const act = Math.max(n.actualRows, 1)
     const factor = act > est ? act / est : est / act
-    if (factor >= 10 && Math.max(n.actualRows, n.planRows) >= 100) {
-      out.push(`rows ${act > est ? 'under' : 'over'}estimated ${factor >= 100 ? Math.round(factor) : factor.toFixed(1)}x`)
-    }
-  }
-  const removed = num(r['Rows Removed by Filter'])
-  if (removed > 0 && n.actualRows !== null && removed >= 1000 && removed > n.actualRows * 5) {
-    out.push(`filter discards ${pct(removed / (removed + n.actualRows))} of rows scanned`)
-  }
-  if (r['Sort Space Type'] === 'Disk') out.push(`sort spills to disk (${num(r['Sort Space Used'])} kB)`)
-  if (num(r['Hash Batches']) > 1) out.push(`hash uses ${r['Hash Batches']} batches (work_mem too small)`)
-  if (num(r['Temp Written Blocks']) > 0 && !out.some(w => w.includes('disk') || w.includes('batches'))) out.push('writes temp blocks')
-  if (num(r['Lossy Heap Blocks']) > 0) out.push(`lossy bitmap (${r['Lossy Heap Blocks']} heap blocks)`)
-  if (n.type === 'Index Only Scan' && num(r['Heap Fetches']) > 0 && n.actualRows !== null && num(r['Heap Fetches']) > n.actualRows * 0.5) {
-    out.push(`${r['Heap Fetches']} heap fetches (visibility map stale, run VACUUM)`)
-  }
-  if (r['Workers Launched'] !== undefined && num(r['Workers Launched']) < num(r['Workers Planned'])) {
-    out.push(`only ${r['Workers Launched']} of ${r['Workers Planned']} workers launched`)
+    if (factor < 10 || Math.max(n.actualRows, n.planRows) < 100) return null
+    return `rows ${act > est ? 'under' : 'over'}estimated ${factor >= 100 ? Math.round(factor) : factor.toFixed(1)}x`
+  },
+  (n, r) => {
+    const removed = num(r['Rows Removed by Filter'])
+    if (removed > 0 && n.actualRows !== null && removed >= 1000 && removed > n.actualRows * 5) return `filter discards ${pct(removed / (removed + n.actualRows))} of rows scanned`
+    return null
+  },
+  (_, r) => r['Sort Space Type'] === 'Disk' ? `sort spills to disk (${num(r['Sort Space Used'])} kB)` : null,
+  (_, r) => num(r['Hash Batches']) > 1 ? `hash uses ${r['Hash Batches']} batches (work_mem too small)` : null,
+  (_, r, sofar) => num(r['Temp Written Blocks']) > 0 && !sofar.some(w => w.includes('disk') || w.includes('batches')) ? 'writes temp blocks' : null,
+  (_, r) => num(r['Lossy Heap Blocks']) > 0 ? `lossy bitmap (${r['Lossy Heap Blocks']} heap blocks)` : null,
+  (n, r) => {
+    if (n.type !== 'Index Only Scan' || n.actualRows === null) return null
+    return num(r['Heap Fetches']) > 0 && num(r['Heap Fetches']) > n.actualRows * 0.5 ? `${r['Heap Fetches']} heap fetches (visibility map stale, run VACUUM)` : null
+  },
+  (_, r) => r['Workers Launched'] !== undefined && num(r['Workers Launched']) < num(r['Workers Planned']) ? `only ${r['Workers Launched']} of ${r['Workers Planned']} workers launched` : null,
+]
+
+function warn(n: PlanNode): string[] {
+  const out: string[] = []
+  for (const check of warnChecks) {
+    const w = check(n, n.raw, out)
+    if (w) out.push(w)
   }
   return out
 }

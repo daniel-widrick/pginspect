@@ -254,33 +254,51 @@ function makeResolver(relations: Relation[], columns?: Columns): Resolver {
 
 interface Side { cols: ColRef[]; wrapped: 'func' | 'cast' | null; sql: string; castType: string | null; isConst: boolean }
 
-function side(expr: any, resolve: Resolver): Side {
-  const cols: ColRef[] = []
-  let wrapped: Side['wrapped'] = null
-  let castType: string | null = null
-  const walk = (e: any, depth: number) => {
-    if (!e || typeof e !== 'object') return
-    if (e.ColumnRef) {
-      const f = e.ColumnRef.fields ?? []
-      const names = f.map((x: any) => x.String?.sval).filter((x: any) => typeof x === 'string')
-      if (names.length && f[f.length - 1].A_Star === undefined) {
-        cols.push(resolve({ alias: names.length > 1 ? names[names.length - 2] : null, column: names[names.length - 1] }))
-      }
-      return
-    }
-    if (e.FuncCall) { if (depth === 0) wrapped = 'func'; for (const a of e.FuncCall.args ?? []) walk(a, depth + 1); return }
-    if (e.TypeCast) {
-      if (depth === 0) { wrapped = 'cast'; castType = typeName(e.TypeCast.typeName) }
-      walk(e.TypeCast.arg, depth + 1)
-      return
-    }
-    if (e.A_Expr) { walk(e.A_Expr.lexpr, depth + 1); walk(e.A_Expr.rexpr, depth + 1); return }
-    if (e.CoalesceExpr) { if (depth === 0) wrapped = 'func'; for (const a of e.CoalesceExpr.args ?? []) walk(a, depth + 1); return }
-    if (e.A_Const || e.ParamRef || e.SubLink) return
-    if (e.List) { for (const a of e.List.items ?? []) walk(a, depth + 1); return }
-    for (const k of Object.keys(e)) walk(e[k], depth + 1)
+/** What a walk over one side of a comparison collects. */
+interface SideWalk { cols: ColRef[]; wrapped: Side['wrapped']; castType: string | null; resolve: Resolver }
+
+// Children to descend into, per node kind. A kind with no entry is walked
+// through generically; constants, parameters and sublinks are leaves.
+const sideChildren: Record<string, (v: any) => any[]> = {
+  FuncCall: v => v.args ?? [],
+  CoalesceExpr: v => v.args ?? [],
+  TypeCast: v => [v.arg],
+  A_Expr: v => [v.lexpr, v.rexpr],
+  List: v => v.items ?? [],
+  A_Const: () => [],
+  ParamRef: () => [],
+  SubLink: () => [],
+}
+
+function walkSide(w: SideWalk, e: any, depth: number): void {
+  if (!e || typeof e !== 'object') return
+  const kind = Object.keys(e)[0]
+  const v = kind ? e[kind] : undefined
+  if (kind === 'ColumnRef') {
+    const ref = columnRef(v)
+    if (ref) w.cols.push(w.resolve(ref))
+    return
   }
-  walk(expr, 0)
+  // Only the outermost wrapper matters for indexing.
+  if (depth === 0 && (kind === 'FuncCall' || kind === 'CoalesceExpr')) w.wrapped = 'func'
+  if (depth === 0 && kind === 'TypeCast') { w.wrapped = 'cast'; w.castType = typeName(v.typeName) }
+  const children = kind && sideChildren[kind] ? sideChildren[kind](v) : Object.values(e)
+  for (const c of children) walkSide(w, c, depth + 1)
+}
+
+/** The column a ColumnRef names, with its qualifier, or null for a star. */
+function columnRef(v: any): ColRef | null {
+  const f = v.fields ?? []
+  const names = f.map((x: any) => x.String?.sval).filter((x: any) => typeof x === 'string')
+  if (!names.length || f[f.length - 1].A_Star !== undefined) return null
+  return { alias: names.length > 1 ? names[names.length - 2] : null, column: names[names.length - 1] }
+}
+
+function side(expr: any, resolve: Resolver): Side {
+  const w: SideWalk = { cols: [], wrapped: null, castType: null, resolve }
+  walkSide(w, expr, 0)
+  let { wrapped, castType } = w
+  const cols = w.cols
   // A cast that only changes the string type is a no-op for indexing.
   if (wrapped === 'cast' && castType && ['text', 'varchar', 'character varying', 'bpchar', 'character'].includes(castType)) { wrapped = null; castType = null }
   if (cols.length === 0) { wrapped = null; castType = null }

@@ -53,6 +53,29 @@ func TestParseTextLog(t *testing.T) {
 	}
 }
 
+// TestParseTextLogDetailBelongsToTheRecordBefore: the parser is a single pass
+// that remembers one entry, so a DETAIL only ever attaches to the LOG record
+// directly before it. A STATEMENT in between, or a DETAIL with nothing before
+// it, must leave the parameters alone, and the final record must not be lost.
+func TestParseTextLogDetailBelongsToTheRecordBefore(t *testing.T) {
+	data := "2026-09-12 23:10:56.000 UTC [1] DETAIL:  Parameters: $1 = 'stray'\n" +
+		"2026-09-12 23:10:56.412 UTC [59] LOG:  duration: 34.927 ms  execute <unnamed>: select $1\n" +
+		"2026-09-12 23:10:56.412 UTC [59] STATEMENT:  select $1\n" +
+		"2026-09-12 23:10:56.412 UTC [59] DETAIL:  Parameters: $1 = '7'\n" +
+		"2026-09-12 23:10:57.000 UTC [60] LOG:  duration: 1.000 ms  execute <unnamed>: select $1\n" +
+		"2026-09-12 23:10:57.000 UTC [60] DETAIL:  Parameters: $1 = '8'"
+	es := parseTextLog(data)
+	if len(es) != 2 {
+		t.Fatalf("entries: %d", len(es))
+	}
+	if es[0].Params != nil {
+		t.Errorf("a DETAIL after an intervening STATEMENT was attached: %+v", es[0].Params)
+	}
+	if es[1].Params["$1"] != "'8'" {
+		t.Errorf("the DETAIL for the last record was lost: %+v", es[1].Params)
+	}
+}
+
 func TestParseCSVLog(t *testing.T) {
 	data := `2026-09-12 23:10:56.412 UTC,"postgres","inspect",59,"[local]",6aa5dc00.3b,3,"SELECT",2026-09-12 23:10:56 UTC,1/2,0,LOG,00000,"duration: 34.927 ms  execute <unnamed>: select count(*) from shop.orders where customer_id = $1 and status = $2 ","Parameters: $1 = '7', $2 = 'paid'",,,,,,,,"psql","client backend",,-3653727160547732294` + "\n"
 	es := parseCSVLog(data)

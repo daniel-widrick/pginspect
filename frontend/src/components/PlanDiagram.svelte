@@ -69,37 +69,51 @@
     return Math.min(1, Math.log10(Math.max(1, rows)) / 6)
   }
 
+  type Line = { text: string; style: string }
+
+  /** The first line: node type, its detail, and in compact mode the cost figures too. */
+  function headline(n: PlanNode, f: number): Line[] {
+    const first: Line[] = [{ text: n.type, style: 'title' }]
+    if (n.detail) first.push({ text: ' ' + n.detail, style: 'muted' })
+    if (compact) first.push({ text: ` · ${plan.analyze ? fmtMs(n.exclTime) : fmtNum(Math.round(n.exclCost))} · ${pct(f)}`, style: 'muted' })
+    return first
+  }
+
+  /** The lines below the headline in full mode: role, condition, time or cost, row counts. */
+  function detailLines(n: PlanNode, f: number): Line[][] {
+    const lines: Line[][] = []
+    if (n.role) lines.push([{ text: n.role, style: 'muted' }])
+    const filter = n.raw['Filter'] ?? n.raw['Index Cond'] ?? n.raw['Hash Cond'] ?? n.raw['Merge Cond'] ?? n.raw['Join Filter'] ?? n.raw['Recheck Cond']
+    if (filter) lines.push([{ text: String(filter), style: 'detail' }])
+    if (plan.analyze) {
+      lines.push([{ text: `${fmtMs(n.exclTime)} · ${pct(f)} of time`, style: 'detail' }])
+      lines.push([{ text: `est ${fmtNum(n.planRows)} · actual ${rowsText(n.actualRows ?? 0)}${loopsText(n)}`, style: 'detail' }])
+    } else {
+      lines.push([{ text: `cost ${fmtNum(Math.round(n.exclCost))} · ${pct(f)} of total`, style: 'detail' }])
+      lines.push([{ text: `est ${rowsText(n.planRows)}`, style: 'detail' }])
+    }
+    return lines
+  }
+
+  const loopsText = (n: PlanNode) => (n.loops > 1 ? ` × ${fmtNum(n.loops)}` : '')
+
+  function edgeTo(parent: PlanNode, n: PlanNode) {
+    const rows = n.actualRows !== null ? n.actualRows * n.loops : n.planRows
+    return {
+      from: String(parent.id), to: String(n.id), arrow: 'backward', weight: weight(rows),
+      label: n.actualRows !== null ? `${rowsText(n.actualRows)}${loopsText(n)}` : rowsText(n.planRows),
+    }
+  }
+
   function buildSpec() {
     const nodes: any[] = []
     const edges: any[] = []
     const walk = (n: PlanNode, parent: PlanNode | null) => {
       const f = share(n)
-      const lines: { text: string; style: string }[][] = []
-      const first = [{ text: n.type, style: 'title' }]
-      if (n.detail) first.push({ text: ' ' + n.detail, style: 'muted' })
-      if (compact) first.push({ text: ` · ${plan.analyze ? fmtMs(n.exclTime) : fmtNum(Math.round(n.exclCost))} · ${pct(f)}`, style: 'muted' })
-      lines.push(first)
-      if (!compact) {
-        if (n.role) lines.push([{ text: n.role, style: 'muted' }])
-        const filter = n.raw['Filter'] ?? n.raw['Index Cond'] ?? n.raw['Hash Cond'] ?? n.raw['Merge Cond'] ?? n.raw['Join Filter'] ?? n.raw['Recheck Cond']
-        if (filter) lines.push([{ text: String(filter), style: 'detail' }])
-        if (plan.analyze) {
-          lines.push([{ text: `${fmtMs(n.exclTime)} · ${pct(f)} of time`, style: 'detail' }])
-          lines.push([{ text: `est ${fmtNum(n.planRows)} · actual ${rowsText(n.actualRows ?? 0)}${n.loops > 1 ? ` × ${fmtNum(n.loops)}` : ''}`, style: 'detail' }])
-        } else {
-          lines.push([{ text: `cost ${fmtNum(Math.round(n.exclCost))} · ${pct(f)} of total`, style: 'detail' }])
-          lines.push([{ text: `est ${rowsText(n.planRows)}`, style: 'detail' }])
-        }
-      }
+      const lines: Line[][] = [headline(n, f), ...(compact ? [] : detailLines(n, f))]
       const kind = f >= 0.5 ? 'hot' : n.warnings.length ? 'warm' : ''
       nodes.push({ id: String(n.id), kind, bar: f, maxWidth: compact ? 220 : 260, overflow: 'ellipsize', lines, collapsed: collapsed.has(n.id) })
-      if (parent) {
-        const rows = n.actualRows !== null ? n.actualRows * n.loops : n.planRows
-        edges.push({
-          from: String(parent.id), to: String(n.id), arrow: 'backward', weight: weight(rows),
-          label: n.actualRows !== null ? `${rowsText(n.actualRows)}${n.loops > 1 ? ` × ${fmtNum(n.loops)}` : ''}` : rowsText(n.planRows),
-        })
-      }
+      if (parent) edges.push(edgeTo(parent, n))
       n.children.forEach(c => walk(c, n))
     }
     walk(plan.root, null)

@@ -201,38 +201,19 @@ func (s *Session) SlowLog(ctx context.Context, limit int, maxBytes int64) (SlowL
 			consumedAll = false
 			break
 		}
-		path := f.name
-		if dir != "" {
-			path = strings.TrimRight(dir, "/") + "/" + f.name
-		}
+		// Only the tail of a file that would overrun the budget is read.
 		length := f.size
-		offset := int64(0)
 		if length > remaining {
-			offset = length - remaining
 			length = remaining
 			consumedAll = false
 		}
-		var data string
-		if err := s.pool.QueryRow(ctx, `select pg_catalog.pg_read_file($1, $2, $3)`, path, offset, length).Scan(&data); err != nil {
-			return res, fmt.Errorf("read %s: %w", path, err)
+		data, err := s.readLogTail(ctx, logPath(dir, f.name), f.size, length)
+		if err != nil {
+			return res, err
 		}
 		remaining -= length
 		res.BytesRead += length
-		if offset > 0 {
-			// Drop the partial first record.
-			if i := strings.IndexByte(data, '\n'); i >= 0 {
-				data = data[i+1:]
-			}
-		}
-		var parsed []SlowLogEntry
-		switch res.Status.Format {
-		case "json":
-			parsed = parseJSONLog(data)
-		case "csv":
-			parsed = parseCSVLog(data)
-		default:
-			parsed = parseTextLog(data)
-		}
+		parsed := parseLog(res.Status.Format, data)
 		for i := range parsed {
 			parsed[i].File = f.name
 		}
@@ -246,6 +227,41 @@ func (s *Session) SlowLog(ctx context.Context, limit int, maxBytes int64) (SlowL
 	res.Entries = entries
 	res.Complete = consumedAll
 	return res, nil
+}
+
+func logPath(dir, name string) string {
+	if dir == "" {
+		return name
+	}
+	return strings.TrimRight(dir, "/") + "/" + name
+}
+
+// readLogTail reads the last length bytes of a size-byte log file through the
+// server. When that is not the whole file the first record is partial and is
+// dropped, so every returned line starts at a record boundary.
+func (s *Session) readLogTail(ctx context.Context, path string, size, length int64) (string, error) {
+	offset := size - length
+	var data string
+	if err := s.pool.QueryRow(ctx, `select pg_catalog.pg_read_file($1, $2, $3)`, path, offset, length).Scan(&data); err != nil {
+		return "", fmt.Errorf("read %s: %w", path, err)
+	}
+	if offset > 0 {
+		if i := strings.IndexByte(data, '\n'); i >= 0 {
+			data = data[i+1:]
+		}
+	}
+	return data, nil
+}
+
+func parseLog(format, data string) []SlowLogEntry {
+	switch format {
+	case "json":
+		return parseJSONLog(data)
+	case "csv":
+		return parseCSVLog(data)
+	default:
+		return parseTextLog(data)
+	}
 }
 
 var durationRe = regexp.MustCompile(`^duration: ([0-9.]+) ms(?:\s+(statement|execute|bind|parse)(?: [^:]*)?: (?s)(.*))?$`)
@@ -406,46 +422,66 @@ var textLineRe = regexp.MustCompile(`^(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d+)? 
 // default %m) and tolerates whatever follows up to the severity. It cannot
 // recover the query id.
 func parseTextLog(data string) []SlowLogEntry {
+	p := textLogParser{}
 	// Records start at a line beginning with a timestamp; continuation lines
 	// are indented with a tab.
-	var records []string
-	var cur strings.Builder
 	for _, line := range strings.Split(data, "\n") {
-		if len(line) > 19 && line[4] == '-' && line[7] == '-' && line[10] == ' ' && !strings.HasPrefix(line, "\t") {
-			if cur.Len() > 0 {
-				records = append(records, cur.String())
-			}
-			cur.Reset()
-			cur.WriteString(line)
-		} else if cur.Len() > 0 {
-			cur.WriteString("\n")
-			cur.WriteString(strings.TrimPrefix(line, "\t"))
+		if startsTextRecord(line) {
+			p.flush()
+			p.cur.WriteString(line)
+		} else if p.cur.Len() > 0 {
+			p.cur.WriteString("\n")
+			p.cur.WriteString(strings.TrimPrefix(line, "\t"))
 		}
 	}
-	if cur.Len() > 0 {
-		records = append(records, cur.String())
+	p.flush()
+	return p.out
+}
+
+// textLogParser assembles records line by line and emits each one as soon as
+// the next begins. The one thing a record needs from its neighbour is that a
+// DETAIL record carries the parameters of the LOG record just before it, so
+// the parser remembers which entry is still waiting for one.
+type textLogParser struct {
+	cur strings.Builder
+	out []SlowLogEntry
+	// pending indexes the entry a following DETAIL would belong to; -1 when none.
+	pending int
+}
+
+func startsTextRecord(line string) bool {
+	return len(line) > 19 && line[4] == '-' && line[7] == '-' && line[10] == ' ' && !strings.HasPrefix(line, "\t")
+}
+
+// flush parses the record collected so far, if any, and starts the next.
+func (p *textLogParser) flush() {
+	if p.cur.Len() == 0 {
+		p.pending = -1
+		return
 	}
-	var out []SlowLogEntry
-	for i, rec := range records {
-		m := textLineRe.FindStringSubmatch(rec)
-		if m == nil || m[3] != "LOG" {
-			continue
-		}
-		ms, cmd, q, ok := parseMessage(m[4])
-		if !ok {
-			continue
-		}
-		e := SlowLogEntry{Time: parseLogTime(m[1]), DurationMs: ms, Command: cmd, Query: q}
-		e.PID, _ = strconv.Atoi(m[2])
-		// A DETAIL record immediately after carries the parameters.
-		if i+1 < len(records) {
-			if d := textLineRe.FindStringSubmatch(records[i+1]); d != nil && d[3] == "DETAIL" {
-				e.Params = parseParams(d[4])
-			}
-		}
-		out = append(out, e)
+	rec := p.cur.String()
+	p.cur.Reset()
+	m := textLineRe.FindStringSubmatch(rec)
+	if m == nil {
+		p.pending = -1
+		return
 	}
-	return out
+	if m[3] == "DETAIL" && p.pending >= 0 {
+		p.out[p.pending].Params = parseParams(m[4])
+	}
+	// Whatever this record was, the previous LOG has had its one chance.
+	p.pending = -1
+	if m[3] != "LOG" {
+		return
+	}
+	ms, cmd, q, ok := parseMessage(m[4])
+	if !ok {
+		return
+	}
+	e := SlowLogEntry{Time: parseLogTime(m[1]), DurationMs: ms, Command: cmd, Query: q}
+	e.PID, _ = strconv.Atoi(m[2])
+	p.out = append(p.out, e)
+	p.pending = len(p.out) - 1
 }
 
 // Substitute replaces $n placeholders with the logged literals, leaving
