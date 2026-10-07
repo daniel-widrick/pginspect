@@ -207,23 +207,37 @@ func (s *Session) RunQuery(ctx context.Context, queryID, sql string, maxRows int
 		return resp
 	}
 
-	conn, err := s.pool.Acquire(ctx)
+	conn, release, err := s.acquire(ctx, timeoutMs)
 	if err != nil {
 		return finish(err)
 	}
-	defer conn.Release()
-	if timeoutMs > 0 {
-		if _, err := conn.Exec(ctx, fmt.Sprintf("SET statement_timeout = %d", timeoutMs)); err != nil {
-			return finish(err)
-		}
-		defer func() {
-			rctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			_, _ = conn.Exec(rctx, "RESET statement_timeout")
-			cancel()
-		}()
-	}
+	defer release()
 	stopAtLimit := IsPlainSelect(sql)
 	return finish(s.runScript(ctx, conn.Conn(), sql, maxRows, stopAtLimit, &resp))
+}
+
+// acquire takes a pooled connection, with statement_timeout applied for this
+// use when one is asked for. The returned function resets the timeout and
+// releases the connection; it must be deferred, so a connection never goes
+// back to the pool with a timeout still set.
+func (s *Session) acquire(ctx context.Context, timeoutMs int) (*pgxpool.Conn, func(), error) {
+	conn, err := s.pool.Acquire(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if timeoutMs <= 0 {
+		return conn, conn.Release, nil
+	}
+	if _, err := conn.Exec(ctx, fmt.Sprintf("SET statement_timeout = %d", timeoutMs)); err != nil {
+		conn.Release()
+		return nil, nil, err
+	}
+	return conn, func() {
+		rctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_, _ = conn.Exec(rctx, "RESET statement_timeout")
+		cancel()
+		conn.Release()
+	}, nil
 }
 
 // runScript executes a script on conn, appending completed statements to
@@ -321,22 +335,11 @@ func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze, gen
 		return out
 	}
 
-	conn, err := s.pool.Acquire(ctx)
+	conn, release, err := s.acquire(ctx, timeoutMs)
 	if err != nil {
 		return finish(err)
 	}
-	defer conn.Release()
-
-	if timeoutMs > 0 {
-		if _, err := conn.Exec(ctx, fmt.Sprintf("SET statement_timeout = %d", timeoutMs)); err != nil {
-			return finish(err)
-		}
-		defer func() {
-			rctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			_, _ = conn.Exec(rctx, "RESET statement_timeout")
-			cancel()
-		}()
-	}
+	defer release()
 	resp := QueryResponse{}
 	err = s.runScript(ctx, conn.Conn(), script, 10000, false, &resp)
 	if analyze && conn.Conn().PgConn().TxStatus() != 'I' {
