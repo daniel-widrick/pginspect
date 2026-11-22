@@ -5,12 +5,14 @@
   import { toast, errorMessage, type StatsTab } from '../lib/state.svelte'
   import { newQueryTab, refreshStats, explainStatement, statementParams, setSampling, refreshSampling, explainQuery } from '../lib/tabs.svelte'
   import { fmtMs, fmtNum, pct } from '../lib/plan'
+  import ReportDialog from './ReportDialog.svelte'
 
   interface Props { tab: StatsTab }
   let { tab }: Props = $props()
 
   type Key = 'totalMs' | 'calls' | 'meanMs' | 'maxMs' | 'rows' | 'hit' | 'temp' | 'ioReadMs'
   let busy = $state(false)
+  let exporting = $state(false)
   let examples = $state<db.QueryExample[]>([])
   let examplesFor = $state('')
 
@@ -145,6 +147,8 @@
   }
 </script>
 
+{#if exporting}<ReportDialog {tab} onclose={() => (exporting = false)} />{/if}
+
 <div class="stats">
   <div class="toolbar">
     <input type="text" placeholder="Filter by query text or user" bind:value={tab.filter} />
@@ -161,6 +165,7 @@
         {fmtNum(tab.data.totalCalls)} calls, {fmtMs(tab.data.totalMs)} total{tab.data.statsReset ? `, since ${fmtTime(tab.data.statsReset)}` : ''}
       </span>
       <button class="small" onclick={() => refreshStats(tab)} disabled={tab.loading}>↻ Refresh</button>
+      <button class="small" onclick={() => (exporting = true)} title="Export the top statements and the slowest ones, with example parameters, as a Markdown report">Export...</button>
       <button class="small danger" onclick={reset} disabled={busy}>Reset</button>
     {/if}
   </div>

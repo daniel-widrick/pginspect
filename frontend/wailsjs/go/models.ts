@@ -327,6 +327,36 @@ export namespace db {
 		    return a;
 		}
 	}
+	export class ReportOptions {
+	    topByTotal: number;
+	    minMaxSeconds: number;
+	    currentDBOnly: boolean;
+	    includeNested: boolean;
+	    readSlowLog: boolean;
+	    examples: number;
+	    explain: boolean;
+	    analyze: boolean;
+	    analyzeTimeoutSeconds: number;
+	    tables: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ReportOptions(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.topByTotal = source["topByTotal"];
+	        this.minMaxSeconds = source["minMaxSeconds"];
+	        this.currentDBOnly = source["currentDBOnly"];
+	        this.includeNested = source["includeNested"];
+	        this.readSlowLog = source["readSlowLog"];
+	        this.examples = source["examples"];
+	        this.explain = source["explain"];
+	        this.analyze = source["analyze"];
+	        this.analyzeTimeoutSeconds = source["analyzeTimeoutSeconds"];
+	        this.tables = source["tables"];
+	    }
+	}
 	
 	export class Routine {
 	    schema: string;

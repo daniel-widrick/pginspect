@@ -86,69 +86,21 @@ func (s *Session) StatStatements(ctx context.Context, currentDBOnly bool, limit 
 	}
 	resp.Available = true
 
-	// Column names changed in PG13 (total_time -> total_exec_time) and PG17
-	// (blk_read_time -> shared_blk_read_time), so pull the row as JSON and
-	// map whichever keys exist.
-	cols := map[string]bool{}
-	rows, err := s.pool.Query(ctx, `
-		select a.attname
-		from pg_catalog.pg_attribute a
-		join pg_catalog.pg_class c on c.oid = a.attrelid
-		join pg_catalog.pg_namespace n on n.oid = c.relnamespace
-		join pg_catalog.pg_extension e on e.extnamespace = n.oid and e.extname = 'pg_stat_statements'
-		where c.relname = 'pg_stat_statements' and a.attnum > 0 and not a.attisdropped`)
+	cols, err := s.statColumns(ctx)
 	if err != nil {
 		return resp, err
 	}
-	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return resp, err
-	}
-	for _, n := range names {
-		cols[n] = true
-	}
-	orderCol := "total_exec_time"
-	if !cols[orderCol] {
-		orderCol = "total_time"
-	}
-	if !cols[orderCol] {
-		return resp, fmt.Errorf("unrecognised pg_stat_statements layout (no %s column)", orderCol)
-	}
-
 	where := ""
 	if currentDBOnly {
-		where = "where s.dbid = (select oid from pg_catalog.pg_database where datname = current_database())"
+		where = "where " + currentDBFilter
 	}
-	q := fmt.Sprintf(`
-		select (to_jsonb(s) || jsonb_build_object('usename', r.rolname, 'datname', d.datname))::text
-		from pg_stat_statements s
-		left join pg_catalog.pg_roles r on r.oid = s.userid
-		left join pg_catalog.pg_database d on d.oid = s.dbid
-		%s
-		order by s.%s desc
-		limit %d`, where, orderCol, limit)
-	rows, err = s.pool.Query(ctx, q)
+	resp.Statements, err = s.queryStatements(ctx, where, "s."+cols.total+" desc", limit)
 	if err != nil {
 		return resp, err
-	}
-	raws, err := pgx.CollectRows(rows, pgx.RowTo[string])
-	if err != nil {
-		return resp, err
-	}
-	for _, raw := range raws {
-		// UseNumber keeps 64-bit values such as queryid exact; float64 would
-		// round anything above 2^53.
-		dec := json.NewDecoder(strings.NewReader(raw))
-		dec.UseNumber()
-		var m map[string]any
-		if err := dec.Decode(&m); err != nil {
-			return resp, err
-		}
-		resp.Statements = append(resp.Statements, statFromMap(m))
 	}
 
 	// Totals cover every statement, not just the returned page.
-	totalQ := fmt.Sprintf(`select coalesce(sum(s.%s), 0), coalesce(sum(s.calls), 0) from pg_stat_statements s %s`, orderCol, where)
+	totalQ := fmt.Sprintf(`select coalesce(sum(s.%s), 0), coalesce(sum(s.calls), 0) from pg_stat_statements s %s`, cols.total, where)
 	if err := s.pool.QueryRow(ctx, totalQ).Scan(&resp.TotalMs, &resp.TotalCalls); err != nil {
 		return resp, err
 	}
@@ -159,6 +111,82 @@ func (s *Session) StatStatements(ctx context.Context, currentDBOnly bool, limit 
 		resp.StatsReset = *reset
 	}
 	return resp, nil
+}
+
+// statCols names the version-dependent pg_stat_statements columns.
+type statCols struct {
+	total string // total_exec_time (PG13+) or total_time
+	max   string // max_exec_time (PG13+) or max_time
+	// toplevel exists from PG14; older servers track top-level statements only.
+	toplevel bool
+}
+
+const currentDBFilter = "s.dbid = (select oid from pg_catalog.pg_database where datname = current_database())"
+
+// statColumns reads which columns the installed pg_stat_statements has.
+// Names changed in PG13 (total_time -> total_exec_time) and PG17
+// (blk_read_time -> shared_blk_read_time); rows are read as JSON so the
+// rest map by whichever keys exist.
+func (s *Session) statColumns(ctx context.Context) (statCols, error) {
+	rows, err := s.pool.Query(ctx, `
+		select a.attname
+		from pg_catalog.pg_attribute a
+		join pg_catalog.pg_class c on c.oid = a.attrelid
+		join pg_catalog.pg_namespace n on n.oid = c.relnamespace
+		join pg_catalog.pg_extension e on e.extnamespace = n.oid and e.extname = 'pg_stat_statements'
+		where c.relname = 'pg_stat_statements' and a.attnum > 0 and not a.attisdropped`)
+	if err != nil {
+		return statCols{}, err
+	}
+	names, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return statCols{}, err
+	}
+	have := map[string]bool{}
+	for _, n := range names {
+		have[n] = true
+	}
+	switch {
+	case have["total_exec_time"]:
+		return statCols{total: "total_exec_time", max: "max_exec_time", toplevel: have["toplevel"]}, nil
+	case have["total_time"]:
+		return statCols{total: "total_time", max: "max_time", toplevel: have["toplevel"]}, nil
+	}
+	return statCols{}, fmt.Errorf("unrecognised pg_stat_statements layout (no total_exec_time column)")
+}
+
+// queryStatements reads pg_stat_statements rows. where and order are SQL
+// fragments over alias s; args fill any $n in where.
+func (s *Session) queryStatements(ctx context.Context, where, order string, limit int, args ...any) ([]StatStatement, error) {
+	q := fmt.Sprintf(`
+		select (to_jsonb(s) || jsonb_build_object('usename', r.rolname, 'datname', d.datname))::text
+		from pg_stat_statements s
+		left join pg_catalog.pg_roles r on r.oid = s.userid
+		left join pg_catalog.pg_database d on d.oid = s.dbid
+		%s
+		order by %s
+		limit %d`, where, order, limit)
+	rows, err := s.pool.Query(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	raws, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		return nil, err
+	}
+	out := make([]StatStatement, 0, len(raws))
+	for _, raw := range raws {
+		// UseNumber keeps 64-bit values such as queryid exact; float64 would
+		// round anything above 2^53.
+		dec := json.NewDecoder(strings.NewReader(raw))
+		dec.UseNumber()
+		var m map[string]any
+		if err := dec.Decode(&m); err != nil {
+			return nil, err
+		}
+		out = append(out, statFromMap(m))
+	}
+	return out, nil
 }
 
 func statFromMap(m map[string]any) StatStatement {
