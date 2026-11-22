@@ -316,7 +316,7 @@ type ExplainResponse struct {
 // statement may contain $1-style parameters and is planned without values
 // (PostgreSQL 16 or newer); analyze and generic are mutually exclusive.
 func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze, generic bool, timeoutMs int) ExplainResponse {
-	stmt, script, err := explainScript(sql, analyze, generic)
+	stmt, script, err := explainScript(sql, analyze, generic, "JSON")
 	if err != nil {
 		return ExplainResponse{Error: err.Error()}
 	}
@@ -362,8 +362,9 @@ func (s *Session) Explain(ctx context.Context, queryID, sql string, analyze, gen
 // explainScript turns the user's statement into the EXPLAIN script to run,
 // and returns the trimmed statement so the response can echo it. The options
 // are fixed by the two switches; ANALYZE runs inside a transaction that the
-// script itself rolls back, so explaining a write leaves no trace.
-func explainScript(sql string, analyze, generic bool) (stmt, script string, err error) {
+// script itself rolls back, so explaining a write leaves no trace. format is
+// JSON for the plan viewer or TEXT for reports.
+func explainScript(sql string, analyze, generic bool, format string) (stmt, script string, err error) {
 	stmt = strings.TrimRight(strings.TrimSpace(sql), "; \t\r\n")
 	if stmt == "" {
 		return "", "", errors.New("nothing to explain")
@@ -371,7 +372,7 @@ func explainScript(sql string, analyze, generic bool) (stmt, script string, err 
 	if analyze && generic {
 		return "", "", errors.New("a generic plan cannot be combined with ANALYZE")
 	}
-	opts := "FORMAT JSON, COSTS, SETTINGS"
+	opts := "FORMAT " + format + ", COSTS, SETTINGS"
 	if analyze {
 		opts = "ANALYZE, BUFFERS, TIMING, " + opts
 	}

@@ -380,7 +380,36 @@ func (a *App) QueryExamples(connID, queryID string) ([]db.QueryExample, error) {
 	return ex, nil
 }
 
+// StatsReport builds a Markdown report of the selected pg_stat_statements
+// rows with example executions and plans. It can take a while: the server
+// log is read and, with ANALYZE, every statement runs once.
+func (a *App) StatsReport(connID string, opts db.ReportOptions) (string, error) {
+	s, err := a.conns.Get(connID)
+	if err != nil {
+		return "", err
+	}
+	// Generous, because ANALYZE runs each statement; CancelQuery with
+	// db.ReportQueryID stops it sooner.
+	ctx, cancel := context.WithTimeout(a.ctx, 30*time.Minute)
+	defer cancel()
+	return s.StatsReport(ctx, opts)
+}
+
 // ---- export ---------------------------------------------------------------
+
+// SaveTextFile prompts for a file and writes text to it. Returns the chosen
+// path, or "" if cancelled.
+func (a *App) SaveTextFile(text, suggestedName, filterName, pattern string) (string, error) {
+	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
+		Title:           "Save " + filterName,
+		DefaultFilename: suggestedName,
+		Filters:         []runtime.FileFilter{{DisplayName: filterName, Pattern: pattern}},
+	})
+	if err != nil || path == "" {
+		return "", err
+	}
+	return path, os.WriteFile(path, []byte(text), 0o644)
+}
 
 // ExportCSV prompts for a file and writes the given result to it. NULL cells
 // are written as empty fields. Returns the chosen path, or "" if cancelled.

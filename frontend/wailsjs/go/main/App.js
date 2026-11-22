@@ -102,6 +102,10 @@ export function SaveProfile(arg1, arg2) {
   return window['go']['main']['App']['SaveProfile'](arg1, arg2);
 }
 
+export function SaveTextFile(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SaveTextFile'](arg1, arg2, arg3, arg4);
+}
+
 export function SkipUpdate(arg1) {
   return window['go']['main']['App']['SkipUpdate'](arg1);
 }
@@ -120,6 +124,10 @@ export function StartActivitySampling(arg1) {
 
 export function StatStatements(arg1, arg2, arg3) {
   return window['go']['main']['App']['StatStatements'](arg1, arg2, arg3);
+}
+
+export function StatsReport(arg1, arg2) {
+  return window['go']['main']['App']['StatsReport'](arg1, arg2);
 }
 
 export function StopActivitySampling(arg1) {

@@ -105,6 +105,17 @@ Features so far:
   that may read the log directory (pg_monitor, or grants on the two
   functions). jsonlog or csvlog also carries the query id that links an
   execution to its statistics row.
+- Statement report export: Export... on the statistics tab writes a Markdown
+  report meant to be handed to an agent or a reviewer. Pick the top N
+  statements by total time, every statement whose slowest run passed a
+  threshold, or both. Each statement comes with its counters, example
+  executions with real parameter values (from the slow log, matched by query
+  id, and from capture), and an EXPLAIN plan made from the slowest real
+  execution, falling back to GENERIC_PLAN when no values were seen. EXPLAIN
+  ANALYZE is opt-in, for read-only statements only, rolled back and time
+  limited. The report ends with the definition, indexes, index scan counts,
+  sizes and vacuum and analyse times of every table the plans read, plus the
+  server settings that shape plans.
 - Light and dark themes following the system setting.
 
 ## Layout
